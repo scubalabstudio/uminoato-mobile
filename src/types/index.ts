@@ -36,7 +36,29 @@ export interface Community {
   created_at: string;
 }
 
+// 自分宛の保留中のコミュニティ招待（GET /invitations）
+export interface MyInvitation {
+  id: number;
+  community_id: number;
+  community_name: string;
+  invited_by_name: string | null;
+  created_at: string;
+}
+
 // ── イベント ───────────────────────────────────────────────────────────────
+
+// 自分が招待中のイベント（GET /my-events。招待中のみ返る）
+export interface MyInvitedEvent {
+  id: number;
+  name: string;
+  start_date: string | null;
+  end_date: string | null;
+  status: 'open' | 'closed';
+  community_id: number;
+  community_name: string;
+  member_status: 'invited';
+  created_at: string;
+}
 
 export interface Dive {
   sort_order: number;
