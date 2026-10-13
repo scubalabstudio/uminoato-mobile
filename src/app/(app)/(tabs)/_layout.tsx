@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { AppLogo } from '@/components/AppLogo';
 import { Avatar } from '@/components/Avatar';
+import { EventInvitationBell } from '@/components/EventInvitationBell';
 import { NoCommunity } from '@/components/NoCommunity';
 import { SettingsButton } from '@/components/SettingsButton';
 import { ROLE_OWNER } from '@/constants/roles';
@@ -23,7 +24,9 @@ export default function TabsLayout() {
   }
   if (!current) return <NoCommunity />;
 
-  const eventInvitations = invitedEvents.filter((ev) => ev.community_id === current.id).length;
+  const eventInvitations = invitedEvents.filter(
+    (ev) => ev.community_id === current.id && ev.member_status === 'invited',
+  ).length;
 
   return (
     <Tabs
@@ -57,6 +60,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'calendar' : 'calendar-outline'} size={24} color={color} />
           ),
+          headerRight: () => <EventInvitationBell />,
         }}
       />
       <Tabs.Screen

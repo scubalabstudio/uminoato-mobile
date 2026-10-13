@@ -47,7 +47,7 @@ export interface MyInvitation {
 
 // ── イベント ───────────────────────────────────────────────────────────────
 
-// 自分が招待中のイベント（GET /my-events。招待中のみ返る）
+// 自分が招待されたイベント（GET /my-events）
 export interface MyInvitedEvent {
   id: number;
   name: string;
@@ -56,7 +56,7 @@ export interface MyInvitedEvent {
   status: 'open' | 'closed';
   community_id: number;
   community_name: string;
-  member_status: 'invited';
+  member_status: 'invited' | 'accepted' | 'declined';
   created_at: string;
 }
 
