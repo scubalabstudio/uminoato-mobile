@@ -1,6 +1,5 @@
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/ui';
 import { colors } from '@/constants/theme';
 import { useSession } from '@/context/SessionContext';
@@ -19,7 +18,6 @@ export default function SettingsScreen() {
   return (
     <ScrollView contentContainerStyle={styles.container} contentInsetAdjustmentBehavior="automatic">
       <View style={styles.head}>
-        <Avatar name={user.name} size={80} />
         <Text style={styles.name}>{user.name}</Text>
         <Text style={styles.userId}>@{user.user_id}</Text>
       </View>
@@ -48,8 +46,8 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   container: { padding: 16, paddingBottom: 48, gap: 24 },
-  head: { alignItems: 'center', gap: 6, paddingTop: 8 },
-  name: { fontSize: 20, fontWeight: '700', color: colors.text, marginTop: 6 },
+  head: { gap: 4, paddingTop: 8 },
+  name: { fontSize: 22, fontWeight: '700', color: colors.text },
   userId: { fontSize: 14, color: colors.textSub },
   card: {
     backgroundColor: colors.card,
