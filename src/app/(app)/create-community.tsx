@@ -4,11 +4,13 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text } from 're
 
 import { Button, Field, FormError, errorMessage } from '@/components/ui';
 import { colors } from '@/constants/theme';
+import { useCommunity } from '@/context/CommunityContext';
 import { useSession } from '@/context/SessionContext';
 import { createCommunity } from '@/services/apiService';
 
 export default function CreateCommunityScreen() {
   const { handleApiError } = useSession();
+  const { reload, select } = useCommunity();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -22,9 +24,14 @@ export default function CreateCommunityScreen() {
     setError(null);
     setLoading(true);
     try {
-      await createCommunity({ name: name.trim(), ...(description.trim() ? { description: description.trim() } : {}) });
-      // 一覧はダッシュボードに戻ったとき（フォーカス時）に再取得される
-      router.back();
+      const created = await createCommunity({
+        name: name.trim(),
+        ...(description.trim() ? { description: description.trim() } : {}),
+      });
+      // 作ったコミュニティに入った状態でホームへ戻る（切り替えシートから来た場合はシートも閉じる）
+      await reload();
+      select(created.id);
+      router.dismissAll();
     } catch (e) {
       if (!handleApiError(e)) setError(errorMessage(e));
       setLoading(false);
