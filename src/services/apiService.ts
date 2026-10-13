@@ -1,5 +1,5 @@
 import { BACKEND_URL } from '../config/api';
-import { getAccessToken } from './authService';
+import { clearCredentials, getAccessToken } from './authService';
 import { Community, CommunityEvent, CommunityEventDetail, PageMeta, User } from '../types';
 
 // ── HTTP ヘルパー ──────────────────────────────────────────────────────────
@@ -51,19 +51,26 @@ async function request<T>(
 // ── 認証 ──────────────────────────────────────────────────────────────────
 
 // identifier はユーザーIDまたはメールアドレス（@ を含めばメールとして扱われる）
+// client: 'mobile' を送ると、有効期限180日のトークンが発行される
 export async function login(
   identifier: string,
   password: string,
 ): Promise<{ token: string; user: User }> {
   return request('auth/login', {
     method: 'POST',
-    body: JSON.stringify({ identifier, password }),
+    body: JSON.stringify({ identifier, password, client: 'mobile' }),
   });
 }
 
-// バックエンドはトークンを失効させないため、端末側の資格情報の削除が本体
+// バックエンドでこの端末のトークンだけを失効させる。通信に失敗しても端末の資格情報は削除する
 export async function logout(): Promise<void> {
-  await request('auth/logout', { method: 'POST' });
+  try {
+    await request('auth/logout', { method: 'POST' });
+  } catch {
+    // 失効済み・通信失敗でもログアウトは完了させる
+  } finally {
+    await clearCredentials();
+  }
 }
 
 // GET /auth/me は { user } ではなく user をそのまま返す
