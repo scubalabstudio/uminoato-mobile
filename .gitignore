@@ -34,7 +34,6 @@ yarn-error.*
 .env*.local
 
 # API config (contains backend URL — copy from api.example.ts)
-src/config/api.ts
 
 # typescript
 *.tsbuildinfo
