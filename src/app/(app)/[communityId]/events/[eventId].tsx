@@ -108,6 +108,14 @@ export default function EventDetailScreen() {
         </View>
       ) : null}
 
+      {/* コミュニティメンバーは全イベントを見られるが、写真のアップロードなどはイベントのメンバーだけ */}
+      {!isGuest && (event.member_status === null || event.member_status === 'declined') ? (
+        <View style={styles.notice}>
+          <Ionicons name="eye-outline" size={16} color={colors.textSub} />
+          <Text style={styles.noticeText}>閲覧のみ（このイベントのメンバーではありません）</Text>
+        </View>
+      ) : null}
+
       {event.member_status === 'invited' ? (
         <View style={styles.invite}>
           <Text style={styles.inviteText}>このイベントに招待されています</Text>

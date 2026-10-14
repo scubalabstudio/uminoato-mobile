@@ -87,7 +87,7 @@ export function GuestHome() {
               <View style={styles.list}>
                 <Text style={styles.sectionTitle}>参加中のイベント</Text>
                 {joined.map((ev) => (
-                  <EventRow key={ev.id} event={ev} />
+                  <EventRow key={ev.id} event={ev} communityId={ev.community_id} sub={ev.community_name} />
                 ))}
               </View>
             ) : null}
@@ -104,7 +104,7 @@ export function GuestHome() {
                     終了したイベント（{closed.length}） {showClosed ? '▴' : '▾'}
                   </Text>
                 </Pressable>
-                {showClosed ? closed.map((ev) => <EventRow key={ev.id} event={ev} />) : null}
+                {showClosed ? closed.map((ev) => <EventRow key={ev.id} event={ev} communityId={ev.community_id} sub={ev.community_name} />) : null}
               </View>
             ) : null}
 
