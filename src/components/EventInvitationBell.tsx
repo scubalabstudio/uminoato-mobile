@@ -7,15 +7,14 @@ import { colors } from '@/constants/theme';
 import { useCommunity } from '@/context/CommunityContext';
 import type { MyInvitedEvent } from '@/types';
 
-export function EventInvitationBell() {
-  const { current, invitedEvents, respondEventInvitation } = useCommunity();
+// 届いているイベント招待のベル。押すと一覧のシートを開き、その場で参加・辞退できる。
+// どの招待を出すかは呼び出し側が決める（コミュニティのイベントタブ＝そのコミュニティの招待、ゲスト＝ゲスト参加の招待）
+export function EventInvitationBell({ events }: { events: MyInvitedEvent[] }) {
+  const { respondEventInvitation } = useCommunity();
   const [open, setOpen] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
 
-  const invited = invitedEvents.filter(
-    (ev) => ev.community_id === current?.id && ev.member_status === 'invited',
-  );
-
+  const invited = events.filter((ev) => ev.member_status === 'invited');
 
   const respond = async (ev: MyInvitedEvent, accept: boolean) => {
     setBusyId(ev.id);

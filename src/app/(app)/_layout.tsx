@@ -18,6 +18,7 @@ export default function AppLayout() {
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="settings" options={{ title: '設定' }} />
+        <Stack.Screen name="[communityId]/events/[eventId]" options={{ title: '' }} />
         {/* Instagram のアカウント切り替えと同じく下から出るシート。見出しは中身側に置く（Android のシートはヘッダー非対応） */}
         <Stack.Screen
           name="switch-community"

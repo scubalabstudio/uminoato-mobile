@@ -5,7 +5,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { AppLogo } from '@/components/AppLogo';
 import { Avatar } from '@/components/Avatar';
 import { EventInvitationBell } from '@/components/EventInvitationBell';
-import { NoCommunity } from '@/components/NoCommunity';
+import { GuestHome } from '@/components/GuestHome';
 import { SettingsButton } from '@/components/SettingsButton';
 import { ROLE_OWNER } from '@/constants/roles';
 import { colors } from '@/constants/theme';
@@ -13,7 +13,7 @@ import { useCommunity } from '@/context/CommunityContext';
 
 // 選択中のコミュニティの中を移動する下部タブ。右端のコミュニティアイコンを長押しすると切り替えシートを開く（Instagram と同じ）
 export default function TabsLayout() {
-  const { current, invitations, invitedEvents, isLoading } = useCommunity();
+  const { current, invitations, invitedEvents, guestEvents, isLoading } = useCommunity();
 
   if (isLoading) {
     return (
@@ -22,11 +22,11 @@ export default function TabsLayout() {
       </View>
     );
   }
-  if (!current) return <NoCommunity />;
+  // ゲストを選んでいる・所属コミュニティが無いときはタブを出さない
+  if (!current) return <GuestHome />;
 
-  const eventInvitations = invitedEvents.filter(
-    (ev) => ev.community_id === current.id && ev.member_status === 'invited',
-  ).length;
+  const eventsHere = invitedEvents.filter((ev) => ev.community_id === current.id);
+  const eventInvitations = eventsHere.filter((ev) => ev.member_status === 'invited').length;
 
   return (
     <Tabs
@@ -60,7 +60,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'calendar' : 'calendar-outline'} size={24} color={color} />
           ),
-          headerRight: () => <EventInvitationBell />,
+          headerRight: () => <EventInvitationBell events={eventsHere} />,
         }}
       />
       <Tabs.Screen
@@ -87,7 +87,9 @@ export default function TabsLayout() {
         name="community"
         options={{
           title: 'コミュニティ',
-          tabBarBadge: invitations.length > 0 ? '' : undefined,
+          // コミュニティへの招待、またはゲスト参加のイベントの招待があれば赤い点（切り替えシートで応答する）
+          tabBarBadge:
+            invitations.length > 0 || guestEvents.some((ev) => ev.member_status === 'invited') ? '' : undefined,
           tabBarBadgeStyle: styles.dot,
           tabBarIcon: ({ focused }) => (
             <View style={[styles.ring, focused && styles.ringActive]}>

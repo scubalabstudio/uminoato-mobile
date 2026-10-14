@@ -10,19 +10,30 @@ import type { Community, MyInvitation, MyInvitedEvent } from '@/types';
 // 最後に開いていたコミュニティ。次回起動・ログイン時にそのコミュニティに入った状態で始める
 const KEY_CURRENT_COMMUNITY = 'uminoato_current_community_id';
 
+// 切り替え先としての「ゲスト」（所属していないコミュニティのイベントをまとめて見る）
+export const GUEST = 'guest';
+type Selection = number | typeof GUEST;
+
 interface CommunityValue {
   communities: Community[];
   invitations: MyInvitation[];
   invitedEvents: MyInvitedEvent[];
-  // 選択中のコミュニティ。参加しているコミュニティが無いときだけ null
+  // 所属していないコミュニティのイベント（テンポラリーメンバーとしてのゲスト参加。招待中・参加中）
+  guestEvents: MyInvitedEvent[];
+  // 選択中のコミュニティ。ゲストを選んでいるとき・所属コミュニティが無いときは null
   current: Community | null;
+  // ゲストを選んでいる（ゲスト参加のイベントがあるときだけ true になりうる）
+  isGuestSelected: boolean;
   isLoading: boolean;
   loadError: string | null;
   reload: () => Promise<void>;
-  select: (communityId: number) => void;
+  select: (target: Selection) => void;
   // 招待への応答。参加したコミュニティにはそのまま切り替える。失敗時はアラートを出して false を返す
   respondInvitation: (invitation: MyInvitation, accept: boolean) => Promise<boolean>;
-  respondEventInvitation: (event: MyInvitedEvent, accept: boolean) => Promise<boolean>;
+  respondEventInvitation: (
+    event: Pick<MyInvitedEvent, 'id' | 'name' | 'community_id'>,
+    accept: boolean,
+  ) => Promise<boolean>;
 }
 
 const CommunityContext = createContext<CommunityValue | null>(null);
@@ -38,7 +49,7 @@ export function CommunityProvider({ children }: PropsWithChildren) {
   const [communities, setCommunities] = useState<Community[]>([]);
   const [invitations, setInvitations] = useState<MyInvitation[]>([]);
   const [invitedEvents, setInvitedEvents] = useState<MyInvitedEvent[]>([]);
-  const [currentId, setCurrentId] = useState<number | null>(null);
+  const [selection, setSelection] = useState<Selection | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -63,14 +74,14 @@ export function CommunityProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     (async () => {
       const saved = await AsyncStorage.getItem(KEY_CURRENT_COMMUNITY).catch(() => null);
-      if (saved) setCurrentId(Number(saved));
+      if (saved) setSelection(saved === GUEST ? GUEST : Number(saved));
       await reload();
     })();
   }, [reload]);
 
-  const select = useCallback((communityId: number) => {
-    setCurrentId(communityId);
-    AsyncStorage.setItem(KEY_CURRENT_COMMUNITY, String(communityId)).catch(() => {});
+  const select = useCallback((target: Selection) => {
+    setSelection(target);
+    AsyncStorage.setItem(KEY_CURRENT_COMMUNITY, String(target)).catch(() => {});
   }, []);
 
   const respondInvitation = useCallback(
@@ -93,7 +104,7 @@ export function CommunityProvider({ children }: PropsWithChildren) {
   );
 
   const respondEventInvitation = useCallback(
-    async (event: MyInvitedEvent, accept: boolean) => {
+    async (event: Pick<MyInvitedEvent, 'id' | 'name' | 'community_id'>, accept: boolean) => {
       try {
         await api.respondEventInvitation(event.community_id, event.id, accept ? 'accepted' : 'declined');
         await reload();
@@ -107,15 +118,26 @@ export function CommunityProvider({ children }: PropsWithChildren) {
     [handleApiError, reload],
   );
 
+  const guestEvents = useMemo(() => {
+    const mine = new Set(communities.map((c) => c.id));
+    return invitedEvents.filter((ev) => !mine.has(ev.community_id));
+  }, [communities, invitedEvents]);
+
+  // ゲストを選んでいてもゲスト参加のイベントが無くなっていれば、コミュニティ側に戻す
+  const isGuestSelected = selection === GUEST && guestEvents.length > 0;
   // 保存していたコミュニティから抜けた・別アカウントでログインした場合は先頭のコミュニティにする
-  const current = communities.find((c) => c.id === currentId) ?? communities[0] ?? null;
+  const current = isGuestSelected
+    ? null
+    : (communities.find((c) => c.id === selection) ?? communities[0] ?? null);
 
   const value = useMemo(
     () => ({
       communities,
       invitations,
       invitedEvents,
+      guestEvents,
       current,
+      isGuestSelected,
       isLoading,
       loadError,
       reload,
@@ -127,7 +149,9 @@ export function CommunityProvider({ children }: PropsWithChildren) {
       communities,
       invitations,
       invitedEvents,
+      guestEvents,
       current,
+      isGuestSelected,
       isLoading,
       loadError,
       reload,

@@ -5,14 +5,15 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Avatar } from '@/components/Avatar';
 import { CommunityInvitationList } from '@/components/CommunityInvitationList';
 import { colors } from '@/constants/theme';
-import { useCommunity } from '@/context/CommunityContext';
+import { GUEST, useCommunity } from '@/context/CommunityContext';
 
 // コミュニティ切り替えシート（Instagram のアカウント切り替えに相当）
 export default function SwitchCommunityScreen() {
-  const { communities, invitedEvents, current, select } = useCommunity();
+  const { communities, invitedEvents, guestEvents, current, isGuestSelected, select } = useCommunity();
+  const guestInvited = guestEvents.filter((ev) => ev.member_status === 'invited').length;
 
-  const choose = (communityId: number) => {
-    select(communityId);
+  const choose = (target: number | typeof GUEST) => {
+    select(target);
     router.back();
   };
 
@@ -24,7 +25,10 @@ export default function SwitchCommunityScreen() {
         {communities.map((c) => {
           const selected = c.id === current?.id;
           // 他のコミュニティで届いているイベント招待の件数
-          const pending = invitedEvents.filter((ev) => ev.community_id === c.id).length;
+          // （my-events は参加済みも返すので、招待中だけを数える）
+          const pending = invitedEvents.filter(
+            (ev) => ev.community_id === c.id && ev.member_status === 'invited',
+          ).length;
           return (
             <Pressable
               key={c.id}
@@ -56,6 +60,34 @@ export default function SwitchCommunityScreen() {
           );
         })}
 
+        {/* 所属していないコミュニティのイベント（ゲスト参加）は件数が増えても1行にまとめ、選ぶと一覧を出す */}
+        {guestEvents.length > 0 ? (
+          <Pressable
+            onPress={() => choose(GUEST)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isGuestSelected }}
+            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+          >
+            <View style={styles.guestIcon}>
+              <Ionicons name="person-outline" size={22} color={colors.textSub} />
+            </View>
+            <View style={styles.rowText}>
+              <Text style={styles.rowName}>ゲスト</Text>
+              <Text style={styles.rowMeta}>ゲスト参加のイベント {guestEvents.length}件</Text>
+            </View>
+            {guestInvited > 0 ? (
+              <View style={styles.count}>
+                <Text style={styles.countText}>{guestInvited}</Text>
+              </View>
+            ) : null}
+            {isGuestSelected ? (
+              <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+            ) : (
+              <View style={styles.unchecked} />
+            )}
+          </Pressable>
+        ) : null}
+
         <Pressable
           onPress={() => router.push('/create-community')}
           accessibilityRole="button"
@@ -75,6 +107,14 @@ export default function SwitchCommunityScreen() {
 }
 
 const styles = StyleSheet.create({
+  guestIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   flex: { flex: 1 },
   container: { paddingTop: 24, paddingHorizontal: 16, paddingBottom: 48, gap: 16 },
   title: { fontSize: 16, fontWeight: '700', color: colors.text, textAlign: 'center' },

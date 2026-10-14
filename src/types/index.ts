@@ -89,7 +89,7 @@ export interface CommunityEvent {
   external_public: boolean;
   members_can_edit: boolean;
   is_organizer: boolean;
-  organizer_name: string;
+  organizer_name: string | null; // 主催者が退会済みなら null
   photo_count: number;
   member_count: number;
   unidentified_count: number;
@@ -102,7 +102,7 @@ export interface CommunityEvent {
 export interface EventMember {
   id: number;
   user_id: number;
-  name: string;
+  name: string | null; // 退会済みなら null
   status: EventMemberStatus;
   is_me: boolean;
 }
