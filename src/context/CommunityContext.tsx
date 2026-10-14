@@ -27,6 +27,8 @@ interface CommunityValue {
   isLoading: boolean;
   loadError: string | null;
   reload: () => Promise<void>;
+  // 設定・アイコンを変えたあと、一覧を取り直さずに手元のコミュニティを差し替える
+  replaceCommunity: (community: Community) => void;
   select: (target: Selection) => void;
   // 招待への応答。参加したコミュニティにはそのまま切り替える。失敗時はアラートを出して false を返す
   respondInvitation: (invitation: MyInvitation, accept: boolean) => Promise<boolean>;
@@ -78,6 +80,10 @@ export function CommunityProvider({ children }: PropsWithChildren) {
       await reload();
     })();
   }, [reload]);
+
+  const replaceCommunity = useCallback((community: Community) => {
+    setCommunities((list) => list.map((c) => (c.id === community.id ? community : c)));
+  }, []);
 
   const select = useCallback((target: Selection) => {
     setSelection(target);
@@ -141,6 +147,7 @@ export function CommunityProvider({ children }: PropsWithChildren) {
       isLoading,
       loadError,
       reload,
+      replaceCommunity,
       select,
       respondInvitation,
       respondEventInvitation,
@@ -155,6 +162,7 @@ export function CommunityProvider({ children }: PropsWithChildren) {
       isLoading,
       loadError,
       reload,
+      replaceCommunity,
       select,
       respondInvitation,
       respondEventInvitation,

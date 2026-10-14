@@ -1,12 +1,14 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, Tabs } from 'expo-router';
 import { useState, type ComponentProps } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar } from '@/components/Avatar';
 import { CommunityInvitationList } from '@/components/CommunityInvitationList';
+import { RoleBadge } from '@/components/RoleBadge';
 import { Button } from '@/components/ui';
-import { ROLE_OWNER } from '@/constants/roles';
+import { WEB_URL } from '@/config/api';
+import { isOwner, ROLE_EDITOR } from '@/constants/roles';
 import { colors } from '@/constants/theme';
 import { useCommunity } from '@/context/CommunityContext';
 
@@ -52,22 +54,53 @@ export default function CommunityTab() {
         <Avatar name={current.name} uri={current.icon_url} size={72} />
         <View style={styles.summaryText}>
           <Text style={styles.name}>{current.name}</Text>
-          <Text style={styles.meta}>
-            {current.role} · {current.member_count}人が参加
-          </Text>
+          <View style={styles.metaLine}>
+            <RoleBadge role={current.role} />
+            <Text style={styles.meta}>{current.member_count}人が参加</Text>
+          </View>
         </View>
       </View>
       {current.description ? <Text style={styles.description}>{current.description}</Text> : null}
 
       <View style={styles.menu}>
         <MenuRow icon="swap-horizontal" label="コミュニティを切り替える" onPress={openSwitcher} />
-        {current.role === ROLE_OWNER ? (
+        {/* メンバー管理・設定は管理者だけに出す（サーバーも管理者以外は 403） */}
+        {isOwner(current.role) ? (
           <>
             <View style={styles.divider} />
-            <MenuRow icon="settings-outline" label="コミュニティ設定" note="準備中" />
+            <MenuRow
+              icon="people-outline"
+              label="メンバー管理"
+              note={`${current.member_count}人`}
+              onPress={() =>
+                router.push({ pathname: '/[communityId]/members', params: { communityId: String(current.id) } })
+              }
+            />
+            <View style={styles.divider} />
+            <MenuRow
+              icon="settings-outline"
+              label="コミュニティ設定"
+              onPress={() =>
+                router.push({ pathname: '/[communityId]/settings', params: { communityId: String(current.id) } })
+              }
+            />
           </>
         ) : null}
       </View>
+
+      {isOwner(current.role) ? null : (
+        <View style={styles.roleBox}>
+          <Text style={styles.roleBoxText}>
+            {current.role === ROLE_EDITOR
+              ? '図鑑編集者として、図鑑への登録・編集と未同定写真の同定ができます。'
+              : 'メンバーとして、図鑑・イベントの閲覧とイベントの作成ができます。'}
+            コミュニティの設定・メンバー管理はコミュニティ管理者が行います。
+          </Text>
+          <Pressable onPress={() => Linking.openURL(`${WEB_URL}/umi-no-ato/roles`)} accessibilityRole="link">
+            <Text style={styles.roleLink}>ロールごとにできること</Text>
+          </Pressable>
+        </View>
+      )}
       <Text style={styles.hint}>下のコミュニティアイコンを長押ししても切り替えられます</Text>
 
       <CommunityInvitationList />
@@ -111,6 +144,10 @@ const styles = StyleSheet.create({
   summaryText: { flex: 1, gap: 4 },
   name: { fontSize: 20, fontWeight: '700', color: colors.text },
   meta: { fontSize: 13, color: colors.textSub },
+  metaLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  roleBox: { gap: 6, paddingHorizontal: 4 },
+  roleBoxText: { fontSize: 12, color: colors.textSub, lineHeight: 18 },
+  roleLink: { fontSize: 12, color: colors.primary, fontWeight: '600' },
   description: { fontSize: 14, color: colors.textSub, lineHeight: 20 },
   menu: {
     backgroundColor: colors.card,

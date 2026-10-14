@@ -3,7 +3,9 @@ import { clearCredentials, getAccessToken } from './authService';
 import {
   Community,
   CommunityEvent,
+  CommunityMember,
   CommunityEventDetail,
+  CommunityInvitation,
   MyInvitation,
   MyInvitedEvent,
   PageMeta,
@@ -35,13 +37,15 @@ async function request<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const token = await getAccessToken();
+  // 画像のアップロード（FormData）は、境界文字列付きの Content-Type を fetch に付けさせる
+  const isForm = options.body instanceof FormData;
 
   let res: Response;
   try {
     res = await fetch(`${BACKEND_URL}/api/${path}`, {
       ...options,
       headers: {
-        'Content-Type': 'application/json',
+        ...(isForm ? {} : { 'Content-Type': 'application/json' }),
         Accept: 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...options.headers,
@@ -134,6 +138,100 @@ export async function createCommunity(params: {
     body: JSON.stringify(params),
   });
   return res.community;
+}
+
+export type CommunitySettings = Partial<
+  Pick<
+    Community,
+    | 'encyclopedia_public'
+    | 'report_suffix_instagram'
+    | 'report_suffix_facebook'
+    | 'report_suffix_line'
+    | 'report_suffix_x'
+  >
+>;
+
+// 以下3つはコミュニティ管理者のみ（それ以外は 403）。送った項目だけが更新される
+export async function updateCommunitySettings(communityId: number, settings: CommunitySettings): Promise<Community> {
+  const res = await request<{ community: Community }>(`communities/${communityId}/settings`, {
+    method: 'PATCH',
+    body: JSON.stringify(settings),
+  });
+  return res.community;
+}
+
+// サーバー側で正方形にクロップ・512px に縮小・WebP 化される。送れるのは JPEG/PNG/WebP/HEIC、5MB まで
+export async function uploadCommunityIcon(communityId: number, fileUri: string): Promise<Community> {
+  const form = new FormData();
+  // React Native の FormData はファイルを { uri, name, type } で渡す
+  form.append('icon', { uri: fileUri, name: 'icon.jpg', type: 'image/jpeg' } as unknown as Blob);
+  const res = await request<{ community: Community }>(`communities/${communityId}/icon`, {
+    method: 'POST',
+    body: form,
+  });
+  return res.community;
+}
+
+// メンバー・招待・図鑑・イベント・写真もすべて消える（取り消し不可）
+export async function deleteCommunity(communityId: number): Promise<void> {
+  await request(`communities/${communityId}`, { method: 'DELETE' });
+}
+
+// ── メンバー管理（3つともコミュニティ管理者のみ） ─────────────────────────────
+
+export async function fetchMembers(communityId: number): Promise<CommunityMember[]> {
+  const res = await request<{ members: CommunityMember[] }>(`communities/${communityId}/members`);
+  return res.members;
+}
+
+// 自分自身・最後の管理者は変更不可（422）
+export async function updateMemberRole(communityId: number, memberId: number, role: string): Promise<CommunityMember> {
+  const res = await request<{ member: CommunityMember }>(`communities/${communityId}/members/${memberId}/role`, {
+    method: 'PATCH',
+    body: JSON.stringify({ role }),
+  });
+  return res.member;
+}
+
+// 除籍してもイベント参加・写真・図鑑エントリは残る
+export async function removeMember(communityId: number, memberId: number): Promise<void> {
+  await request(`communities/${communityId}/members/${memberId}`, { method: 'DELETE' });
+}
+
+// ── 招待の管理（4つともコミュニティ管理者のみ） ─────────────────────────────
+
+// 有効な招待（個人宛の招待中・期限内の招待リンク）だけが新しい順で返る
+export async function fetchCommunityInvitations(communityId: number): Promise<CommunityInvitation[]> {
+  const res = await request<{ invitations: CommunityInvitation[] }>(`communities/${communityId}/invitations`);
+  return res.invitations;
+}
+
+// ユーザーID・ニックネームの部分一致（2文字以上）。自分・メンバー・招待中の人は除かれ、最大8件
+export async function searchUsersToInvite(
+  communityId: number,
+  q: string,
+): Promise<{ user_id: string; name: string }[]> {
+  const res = await request<{ users: { user_id: string; name: string }[] }>(
+    `communities/${communityId}/user-search?q=${encodeURIComponent(q)}`,
+  );
+  return res.users;
+}
+
+// 個人宛は表示用のユーザーIDで指定する。リンクは有効なものがあればそれが返る（1コミュニティ1本・7日間）
+export async function createInvitation(
+  communityId: number,
+  params: { type: 'user'; user_id: string } | { type: 'link' },
+): Promise<CommunityInvitation> {
+  const res = await request<{ invitation: CommunityInvitation }>(`communities/${communityId}/invitations`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+  return res.invitation;
+}
+
+// 個人宛の取消・リンクの無効化のどちらもこれ
+export async function revokeInvitation(communityId: number, invitationId: number): Promise<void> {
+  await request(`communities/${communityId}/invitations/${invitationId}`, { method: 'DELETE' });
 }
 
 // ── 招待 ───────────────────────────────────────────────────────────────────

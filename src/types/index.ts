@@ -36,6 +36,28 @@ export interface Community {
   created_at: string;
 }
 
+// メンバー管理の一覧（GET /communities/{id}/members。管理者のみ）
+export interface CommunityMember {
+  id: number; // community_members.id（ロール変更・除籍で使う）
+  user_id: string; // 表示用のユーザーID（users.user_id）
+  name: string;
+  role: string;
+  is_me: boolean;
+  joined_at: string;
+}
+
+// コミュニティが出している有効な招待（GET /communities/{id}/invitations。管理者のみ）
+export interface CommunityInvitation {
+  id: number;
+  type: 'user' | 'link';
+  status: 'pending';
+  invited_user_name: string | null; // type=user のときだけ
+  invited_user_id: string | null; // 表示用のユーザーID。type=user のときだけ
+  token: string | null; // type=link のときだけ
+  expires_at: string | null; // type=link のときだけ（発行から7日）
+  created_at: string;
+}
+
 // 自分宛の保留中のコミュニティ招待（GET /invitations）
 export interface MyInvitation {
   id: number;

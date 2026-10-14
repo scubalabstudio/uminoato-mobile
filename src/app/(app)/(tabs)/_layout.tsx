@@ -7,7 +7,7 @@ import { Avatar } from '@/components/Avatar';
 import { EventInvitationBell } from '@/components/EventInvitationBell';
 import { GuestHome } from '@/components/GuestHome';
 import { SettingsButton } from '@/components/SettingsButton';
-import { ROLE_OWNER } from '@/constants/roles';
+import { isOwner } from '@/constants/roles';
 import { colors } from '@/constants/theme';
 import { useCommunity } from '@/context/CommunityContext';
 
@@ -77,7 +77,7 @@ export default function TabsLayout() {
         options={{
           title: '招待',
           // メンバーの招待はコミュニティ管理者だけ（Web版と同じ）
-          href: current.role === ROLE_OWNER ? undefined : null,
+          href: isOwner(current.role) ? undefined : null,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'person-add' : 'person-add-outline'} size={22} color={color} />
           ),
