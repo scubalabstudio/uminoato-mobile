@@ -23,12 +23,20 @@ import * as api from '@/services/apiService';
 import { fetchCreatureById, searchCreatures, type CreatureDetail } from '@/services/supabaseService';
 import type { EventPhoto } from '@/types';
 
+type DiveOption = { o: number; s: string | null };
+
+function parseDiveOptions(raw?: string): DiveOption[] {
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
 export default function PhotoDetailScreen() {
   const params = useLocalSearchParams<{
     communityId: string; eventId: string; photoId: string;
     url?: string; name?: string; sci?: string;
     uploader?: string; cid?: string; dive?: string;
     edit?: string; mine?: string;
+    dso?: string; dives?: string;
   }>();
 
   const communityId = Number(params.communityId);
@@ -45,6 +53,8 @@ export default function PhotoDetailScreen() {
   const initUploader = params.uploader || null;
   const initCreatureId = params.cid ? Number(params.cid) : null;
   const initDiving = params.dive === '1';
+  const initDiveSortOrder = params.dso ? Number(params.dso) : null;
+  const diveOptions = parseDiveOptions(params.dives);
 
   const [photo, setPhoto] = useState<EventPhoto | null>(null);
   const [creature, setCreature] = useState<CreatureDetail | null>(null);
@@ -55,14 +65,16 @@ export default function PhotoDetailScreen() {
   const [editJaName, setEditJaName] = useState('');
   const [editSciName, setEditSciName] = useState('');
   const [editCreatureId, setEditCreatureId] = useState<number | null>(null);
+  const [editDiveSortOrder, setEditDiveSortOrder] = useState<number | null>(null);
   const [suggestions, setSuggestions] = useState<{ id: number; name: string; scientific_name: string | null }[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const suggestDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 表示用名前（保存後に更新される）
+  // 表示用（保存後に更新される）
   const [displayJaName, setDisplayJaName] = useState<string | null>(initName);
   const [displaySciName, setDisplaySciName] = useState<string | null>(initSci);
+  const [displayDiveSortOrder, setDisplayDiveSortOrder] = useState<number | null>(initDiveSortOrder);
 
   const { width: screenWidth } = useWindowDimensions();
   const imageHeight = Math.round(screenWidth * 0.75);
@@ -77,6 +89,7 @@ export default function PhotoDetailScreen() {
           setPhoto(p);
           setDisplayJaName(p.japanese_name);
           setDisplaySciName(p.scientific_name);
+          setDisplayDiveSortOrder(p.dive_sort_order);
         }
       } catch (e) {
         if (!cancelled) handleApiError(e);
@@ -101,6 +114,7 @@ export default function PhotoDetailScreen() {
     setEditJaName(displayJaName ?? '');
     setEditSciName(displaySciName ?? '');
     setEditCreatureId(photo?.creature_id ?? initCreatureId);
+    setEditDiveSortOrder(photo?.dive_sort_order ?? initDiveSortOrder);
     setSuggestions([]);
     setSaveError(null);
     setEditVisible(true);
@@ -132,9 +146,11 @@ export default function PhotoDetailScreen() {
         scientific_name: editSciName.trim() || null,
         creature_id: editCreatureId,
         is_identified: editJaName.trim().length > 0,
+        dive_sort_order: editDiveSortOrder,
       });
       setDisplayJaName(updated.japanese_name);
       setDisplaySciName(updated.scientific_name);
+      setDisplayDiveSortOrder(updated.dive_sort_order ?? null);
       setPhoto(updated);
       setEditVisible(false);
     } catch (e) {
@@ -151,7 +167,6 @@ export default function PhotoDetailScreen() {
         text: '削除', style: 'destructive', onPress: async () => {
           try {
             await api.deleteEventPhoto(communityId, eventId, photoId);
-            // NavigationのbackはStack内で自動的にhandleされる
             const { router } = await import('expo-router');
             router.back();
           } catch (e) {
@@ -213,6 +228,9 @@ export default function PhotoDetailScreen() {
           ) : (
             <Text style={styles.jaName}>その他の写真</Text>
           )}
+          {displayDiveSortOrder != null ? (
+            <Text style={styles.diveMeta}>{displayDiveSortOrder}本目</Text>
+          ) : null}
           {uploaderName ? <Text style={styles.uploader}>by {uploaderName}</Text> : null}
         </View>
 
@@ -249,7 +267,7 @@ export default function PhotoDetailScreen() {
       <Modal visible={editVisible} transparent animationType="slide" onRequestClose={() => setEditVisible(false)}>
         <Pressable style={styles.overlay} onPress={() => setEditVisible(false)} />
 
-        {/* 検索サジェスト（シートの上に表示） */}
+        {/* 検索サジェスト */}
         {suggestions.length > 0 ? (
           <View style={styles.suggestions}>
             <FlatList
@@ -281,6 +299,7 @@ export default function PhotoDetailScreen() {
           </View>
 
           <View style={styles.sheetBody}>
+            {/* 和名 */}
             <View style={styles.field}>
               <Text style={styles.fieldLabel}>和名</Text>
               <TextInput
@@ -292,6 +311,8 @@ export default function PhotoDetailScreen() {
                 autoCorrect={false}
               />
             </View>
+
+            {/* 学名 */}
             <View style={styles.field}>
               <Text style={styles.fieldLabel}>学名</Text>
               <TextInput
@@ -304,6 +325,35 @@ export default function PhotoDetailScreen() {
                 autoCapitalize="none"
               />
             </View>
+
+            {/* ダイブ順序（ダイビング写真かつダイブ情報がある場合のみ） */}
+            {isDiving && diveOptions.length > 0 ? (
+              <View style={styles.field}>
+                <Text style={styles.fieldLabel}>ダイブ</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.diveChipsRow}>
+                  <Pressable
+                    style={[styles.diveChip, editDiveSortOrder === null && styles.diveChipSelected]}
+                    onPress={() => setEditDiveSortOrder(null)}
+                  >
+                    <Text style={[styles.diveChipText, editDiveSortOrder === null && styles.diveChipTextSelected]}>
+                      未設定
+                    </Text>
+                  </Pressable>
+                  {diveOptions.map(d => (
+                    <Pressable
+                      key={d.o}
+                      style={[styles.diveChip, editDiveSortOrder === d.o && styles.diveChipSelected]}
+                      onPress={() => setEditDiveSortOrder(editDiveSortOrder === d.o ? null : d.o)}
+                    >
+                      <Text style={[styles.diveChipText, editDiveSortOrder === d.o && styles.diveChipTextSelected]}>
+                        {d.o}本目{d.s ? ` · ${d.s}` : ''}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
+
             {saveError ? <Text style={styles.saveError}>{saveError}</Text> : null}
           </View>
         </View>
@@ -339,6 +389,7 @@ const styles = StyleSheet.create({
   head: { paddingHorizontal: 16, paddingTop: 16, gap: 4, alignItems: 'center' },
   jaName: { fontSize: 24, fontWeight: '700', color: colors.text, textAlign: 'center' },
   sciName: { fontSize: 14, color: colors.textSub, fontStyle: 'italic', textAlign: 'center' },
+  diveMeta: { fontSize: 12, color: colors.primary, fontWeight: '600', marginTop: 2 },
   uploader: { fontSize: 12, color: colors.textMuted, marginTop: 2, textAlign: 'center' },
 
   section: {
@@ -422,5 +473,23 @@ const styles = StyleSheet.create({
     color: colors.text,
     backgroundColor: colors.bg,
   },
+
+  // ダイブチップ
+  diveChipsRow: { flexDirection: 'row', gap: 8, paddingVertical: 2 },
+  diveChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  diveChipSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+  },
+  diveChipText: { fontSize: 13, color: colors.textSub },
+  diveChipTextSelected: { color: colors.primary, fontWeight: '600' },
+
   saveError: { fontSize: 13, color: colors.danger },
 });

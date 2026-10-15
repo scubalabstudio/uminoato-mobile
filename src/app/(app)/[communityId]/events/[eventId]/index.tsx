@@ -335,6 +335,7 @@ export default function EventDetailScreen() {
           communityId={communityId}
           eventId={eventId}
           canEdit={canEdit}
+          dives={dives}
         />
       </SectionBlock>
 
@@ -552,13 +553,14 @@ function DiveRow({ dive }: { dive: Dive }) {
 }
 
 function PhotoGrid({
-  photos, tileSize, communityId, eventId, canEdit,
+  photos, tileSize, communityId, eventId, canEdit, dives,
 }: {
   photos: EventPhoto[];
   tileSize: number;
   communityId: number;
   eventId: number;
   canEdit: boolean;
+  dives: Dive[];
 }) {
   if (photos.length === 0) {
     return (
@@ -574,6 +576,7 @@ function PhotoGrid({
         <Pressable
           key={photo.id}
           onPress={() => {
+            const diveOpts = dives.map(d => ({ o: d.sort_order, s: d.dive_site ?? null }));
             const qs = [
               `url=${encodeURIComponent(photo.display_url)}`,
               `name=${encodeURIComponent(photo.japanese_name ?? '')}`,
@@ -583,6 +586,8 @@ function PhotoGrid({
               `dive=${photo.is_diving_photo ? 1 : 0}`,
               `edit=${canEdit ? 1 : 0}`,
               `mine=${photo.is_mine ? 1 : 0}`,
+              `dso=${photo.dive_sort_order ?? ''}`,
+              `dives=${encodeURIComponent(JSON.stringify(diveOpts))}`,
             ].join('&');
             router.push(`/${communityId}/events/${eventId}/photos/${photo.id}?${qs}`);
           }}

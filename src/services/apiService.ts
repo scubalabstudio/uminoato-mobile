@@ -411,6 +411,7 @@ export async function updateEventPhoto(
     scientific_name?: string | null;
     creature_id?: number | null;
     is_identified?: boolean;
+    dive_sort_order?: number | null;
   },
 ): Promise<EventPhoto> {
   const res = await request<{ photo: EventPhoto }>(
