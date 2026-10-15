@@ -12,3 +12,8 @@ export const ASSIGNABLE_ROLES = [ROLE_OWNER, ROLE_EDITOR, ROLE_MEMBER] as const;
 export function isOwner(role: string | undefined): boolean {
   return role === ROLE_OWNER;
 }
+
+// 図鑑の登録・編集と、未同定写真の同定ができるのは管理者と図鑑編集者
+export function canEditEncyclopedia(role: string | undefined): boolean {
+  return role === ROLE_OWNER || role === ROLE_EDITOR;
+}

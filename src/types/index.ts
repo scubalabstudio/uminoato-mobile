@@ -157,3 +157,58 @@ export interface CommunityEventDetail extends CommunityEvent {
   photos: EventPhoto[];
   reports: Record<string, string> | null;
 }
+
+// ── 図鑑・未同定 ───────────────────────────────────────────────────────────
+
+export interface Tag {
+  id: number;
+  name: string;
+}
+
+// 図鑑の一覧の1件。thumbnail_url は最も古い写真のサムネイル（写真がなければ null）
+export interface EncyclopediaEntry {
+  id: number;
+  japanese_name: string;
+  scientific_name: string;
+  creature_id: number | null;
+  thumbnail_url: string | null;
+  photo_count: number;
+  tags: Tag[];
+  created_at: string;
+}
+
+// 図鑑の写真（1種につき最大5枚。古い順）
+export interface EncyclopediaPhoto {
+  id: number;
+  display_url: string;
+  thumbnail_url: string;
+  uploaded_at: string;
+  camera_make: string | null;
+  camera_model: string | null;
+  housing_id: number | null;
+  lens_id: number | null;
+  point_name: string | null;
+  point_id: number | null;
+  uploader_name: string | null;
+}
+
+export interface EncyclopediaEntryDetail extends EncyclopediaEntry {
+  photos: EncyclopediaPhoto[];
+}
+
+export type EncyclopediaSort = 'name_asc' | 'scientific_asc' | 'newest' | 'oldest' | 'photos_desc';
+
+// イベントで未同定一覧へPushされ、まだ同定されていない写真
+export interface UnidentifiedPhoto {
+  id: number;
+  event_id: number;
+  event_name: string | null;
+  uploader_name: string | null;
+  japanese_name: string | null;
+  scientific_name: string | null;
+  creature_id: number | null;
+  dive_sort_order: number | null;
+  display_url: string;
+  thumbnail_url: string;
+  uploaded_at: string;
+}

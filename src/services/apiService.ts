@@ -8,12 +8,17 @@ import {
   CommunityMember,
   Dive,
   DiveInfo,
+  EncyclopediaEntry,
+  EncyclopediaEntryDetail,
+  EncyclopediaSort,
   EventMember,
   EventPhoto,
   EventUserSearchResult,
   MyInvitation,
   MyInvitedEvent,
   PageMeta,
+  Tag,
+  UnidentifiedPhoto,
   User,
 } from '../types';
 
@@ -421,4 +426,73 @@ export async function searchEventUsers(
     `communities/${communityId}/events/${eventId}/user-search?q=${encodeURIComponent(q)}`,
   );
   return res.users;
+}
+
+// ── 図鑑 ───────────────────────────────────────────────────────────────────
+
+// 1ページ24件。tags はそのコミュニティのエントリに使われている全タグ（絞り込みに関わらない）
+export async function fetchEncyclopedia(
+  communityId: number,
+  params: { page?: number; q?: string; sort?: EncyclopediaSort; tagIds?: number[] } = {},
+): Promise<{ entries: EncyclopediaEntry[]; tags: Tag[]; meta: PageMeta }> {
+  const query = [`page=${params.page ?? 1}`, `sort=${params.sort ?? 'name_asc'}`];
+  if (params.q) query.push(`q=${encodeURIComponent(params.q)}`);
+  params.tagIds?.forEach((id) => query.push(`tag_ids[]=${id}`));
+  return request(`communities/${communityId}/encyclopedia?${query.join('&')}`);
+}
+
+export async function fetchEncyclopediaEntry(communityId: number, entryId: number): Promise<EncyclopediaEntryDetail> {
+  const res = await request<{ entry: EncyclopediaEntryDetail }>(`communities/${communityId}/encyclopedia/${entryId}`);
+  return res.entry;
+}
+
+// 管理者・図鑑編集者のみ。最後の1枚を消すとエントリごと消える（entry_deleted = true）
+export async function deleteEncyclopediaPhoto(
+  communityId: number,
+  entryId: number,
+  photoId: number,
+): Promise<{ entry_deleted: boolean }> {
+  return request(`communities/${communityId}/encyclopedia/${entryId}/photos/${photoId}`, { method: 'DELETE' });
+}
+
+// 管理者・図鑑編集者のみ。指定したタグの集合に置き換える（空配列でタグなし）
+export async function updateEncyclopediaTags(
+  communityId: number,
+  entryId: number,
+  tagIds: number[],
+): Promise<EncyclopediaEntryDetail> {
+  const res = await request<{ entry: EncyclopediaEntryDetail }>(
+    `communities/${communityId}/encyclopedia/${entryId}/tags`,
+    { method: 'PATCH', body: JSON.stringify({ tag_ids: tagIds }) },
+  );
+  return res.entry;
+}
+
+// 図鑑で使えるタグの全件（コミュニティ共通、名前順）
+export async function fetchTags(): Promise<Tag[]> {
+  const res = await request<{ tags: Tag[] }>('tags');
+  return res.tags;
+}
+
+// ── 未同定 ─────────────────────────────────────────────────────────────────
+
+// 1ページ24件、新しい順
+export async function fetchUnidentifiedPhotos(
+  communityId: number,
+  page = 1,
+): Promise<{ photos: UnidentifiedPhoto[]; meta: PageMeta }> {
+  return request(`communities/${communityId}/unidentified-photos?page=${page}`);
+}
+
+// 管理者・図鑑編集者のみ。同定すると未同定一覧から外れる（図鑑には載らない）
+export async function identifyPhoto(
+  communityId: number,
+  photoId: number,
+  params: { japanese_name: string; scientific_name: string | null },
+): Promise<UnidentifiedPhoto> {
+  const res = await request<{ photo: UnidentifiedPhoto }>(
+    `communities/${communityId}/unidentified-photos/${photoId}`,
+    { method: 'PATCH', body: JSON.stringify(params) },
+  );
+  return res.photo;
 }
