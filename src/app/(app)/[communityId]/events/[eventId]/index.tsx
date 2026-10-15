@@ -505,6 +505,7 @@ function UploadModal({
   const [cameraQuery, setCameraQuery] = useState('');
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
   const [cameraSuggestions, setCameraSuggestions] = useState<Camera[]>([]);
+  const [activeSearch, setActiveSearch] = useState<'creature' | 'camera' | null>(null);
 
   const [housings, setHousings] = useState<Housing[]>([]);
   const [selectedHousing, setSelectedHousing] = useState<Housing | null>(null);
@@ -527,7 +528,7 @@ function UploadModal({
   }, [selectedCamera, selectedHousing]);
 
   const onJaChange = (text: string) => {
-    setJaName(text); setCreatureId(null);
+    setJaName(text); setCreatureId(null); setActiveSearch('creature');
     if (creatureDebounce.current) clearTimeout(creatureDebounce.current);
     creatureDebounce.current = setTimeout(async () => {
       setCreatureSuggestions(await searchCreatures(text));
@@ -536,11 +537,11 @@ function UploadModal({
 
   const selectCreature = (item: { id: number; name: string; scientific_name: string | null }) => {
     setJaName(item.name); setSciName(item.scientific_name ?? '');
-    setCreatureId(item.id); setCreatureSuggestions([]);
+    setCreatureId(item.id); setCreatureSuggestions([]); setActiveSearch(null);
   };
 
   const onCameraChange = (text: string) => {
-    setCameraQuery(text); setSelectedCamera(null);
+    setCameraQuery(text); setSelectedCamera(null); setActiveSearch('camera');
     if (cameraDebounce.current) clearTimeout(cameraDebounce.current);
     cameraDebounce.current = setTimeout(async () => {
       setCameraSuggestions(await searchCameras(text));
@@ -550,7 +551,7 @@ function UploadModal({
   const selectCamera = (cam: Camera) => {
     setSelectedCamera(cam);
     setCameraQuery(cam.display_name ?? `${cam.brand ?? ''} ${cam.model}`.trim());
-    setCameraSuggestions([]);
+    setCameraSuggestions([]); setActiveSearch(null);
   };
 
   const clearCamera = () => {
@@ -595,6 +596,25 @@ function UploadModal({
             <Text style={ulStyles.done}>登録する</Text>
           </Pressable>
         </View>
+
+        {activeSearch === 'creature' && creatureSuggestions.length > 0 ? (
+          <View style={ulStyles.suggestions}>
+            {creatureSuggestions.map(item => (
+              <Pressable key={String(item.id)} style={ulStyles.suggRow} onPress={() => selectCreature(item)}>
+                <Text style={ulStyles.suggName}>{item.name}</Text>
+                {item.scientific_name ? <Text style={ulStyles.suggSci}>{item.scientific_name}</Text> : null}
+              </Pressable>
+            ))}
+          </View>
+        ) : activeSearch === 'camera' && cameraSuggestions.length > 0 ? (
+          <View style={ulStyles.suggestions}>
+            {cameraSuggestions.map(cam => (
+              <Pressable key={String(cam.id)} style={ulStyles.suggRow} onPress={() => selectCamera(cam)}>
+                <Text style={ulStyles.suggName}>{cameraLabel(cam)}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
 
         <ScrollView contentContainerStyle={ulStyles.body} keyboardShouldPersistTaps="handled">
           <Image source={{ uri }} style={[ulStyles.preview, { height: previewH }]} resizeMode="cover" />
@@ -648,16 +668,6 @@ function UploadModal({
                   placeholderTextColor={colors.textMuted}
                   autoCorrect={false}
                 />
-                {creatureSuggestions.length > 0 ? (
-                  <View style={ulStyles.suggestions}>
-                    {creatureSuggestions.map(item => (
-                      <Pressable key={String(item.id)} style={ulStyles.suggRow} onPress={() => selectCreature(item)}>
-                        <Text style={ulStyles.suggName}>{item.name}</Text>
-                        {item.scientific_name ? <Text style={ulStyles.suggSci}>{item.scientific_name}</Text> : null}
-                      </Pressable>
-                    ))}
-                  </View>
-                ) : null}
               </View>
               <View style={ulStyles.field}>
                 <Text style={ulStyles.label}>学名（任意）</Text>
@@ -686,25 +696,14 @@ function UploadModal({
                 </Pressable>
               </View>
             ) : (
-              <>
-                <TextInput
-                  style={ulStyles.input}
-                  value={cameraQuery}
-                  onChangeText={onCameraChange}
-                  placeholder="例: TG-6, OM-5"
-                  placeholderTextColor={colors.textMuted}
-                  autoCorrect={false}
-                />
-                {cameraSuggestions.length > 0 ? (
-                  <View style={ulStyles.suggestions}>
-                    {cameraSuggestions.map(cam => (
-                      <Pressable key={String(cam.id)} style={ulStyles.suggRow} onPress={() => selectCamera(cam)}>
-                        <Text style={ulStyles.suggName}>{cameraLabel(cam)}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                ) : null}
-              </>
+              <TextInput
+                style={ulStyles.input}
+                value={cameraQuery}
+                onChangeText={onCameraChange}
+                placeholder="例: TG-6, OM-5"
+                placeholderTextColor={colors.textMuted}
+                autoCorrect={false}
+              />
             )}
           </View>
 
@@ -1127,11 +1126,8 @@ const ulStyles = StyleSheet.create({
   suggestions: {
     maxHeight: 200,
     backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    overflow: 'hidden',
-    marginTop: 2,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   suggRow: {
     paddingHorizontal: 16, paddingVertical: 10,
