@@ -46,6 +46,7 @@ export default function EventDetailScreen() {
   const [pendingUpload, setPendingUpload] = useState<{ uri: string; mimeType: string; ext: string } | null>(null);
   const [managing, setManaging] = useState<'close' | 'delete' | null>(null);
   const [removingId, setRemovingId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<'photos' | 'dive' | 'members'>('photos');
   const { width: screenWidth } = useWindowDimensions();
 
   const load = useCallback(async () => {
@@ -327,41 +328,69 @@ export default function EventDetailScreen() {
         <Text style={styles.description}>{event.description}</Text>
       ) : null}
 
-      {/* ── 写真 ── */}
-      <SectionBlock
-        icon="camera-outline"
-        title="写真"
-        badge={event.unidentified_count > 0 ? `未同定 ${event.unidentified_count}枚` : undefined}
-        onAction={canEdit ? pickAndUpload : undefined}
-        actionIcon={uploading ? undefined : 'camera-outline'}
-        actionLoading={uploading}
-      >
-        <PhotoGrid
-          photos={event.photos ?? []}
-          tileSize={tileSize}
-          communityId={communityId}
-          eventId={eventId}
-          eventName={event.name}
-          canEdit={canEdit}
-          dives={dives}
-        />
-      </SectionBlock>
+      {/* ── タブバー ── */}
+      <View style={styles.tabBar}>
+        <Pressable style={[styles.tab, activeTab === 'photos' && styles.tabActive]} onPress={() => setActiveTab('photos')}>
+          <Text style={[styles.tabText, activeTab === 'photos' && styles.tabTextActive]}>写真</Text>
+          {event.photo_count > 0 ? <Text style={[styles.tabCount, activeTab === 'photos' && styles.tabCountActive]}>{event.photo_count}</Text> : null}
+          {event.unidentified_count > 0 ? <View style={styles.tabDot} /> : null}
+        </Pressable>
+        <Pressable style={[styles.tab, activeTab === 'dive' && styles.tabActive]} onPress={() => setActiveTab('dive')}>
+          <Text style={[styles.tabText, activeTab === 'dive' && styles.tabTextActive]}>ダイブ</Text>
+          {dives.length > 0 ? <Text style={[styles.tabCount, activeTab === 'dive' && styles.tabCountActive]}>{dives.length}</Text> : null}
+        </Pressable>
+        <Pressable style={[styles.tab, activeTab === 'members' && styles.tabActive]} onPress={() => setActiveTab('members')}>
+          <Text style={[styles.tabText, activeTab === 'members' && styles.tabTextActive]}>メンバー</Text>
+          <Text style={[styles.tabCount, activeTab === 'members' && styles.tabCountActive]}>{accepted.length + 1}</Text>
+        </Pressable>
+      </View>
 
-      {/* ── ダイブ情報 ── */}
-      {(event.dive_info && (dives.length > 0 || event.dive_info.weather || event.dive_info.notes)) || canEdit ? (
-        <SectionBlock
-          icon="water-outline"
-          title="ダイブ情報"
-          onAction={canEdit ? () => {
-            const qs = [
-              `weather=${encodeURIComponent(event.dive_info?.weather ?? '')}`,
-              `notes=${encodeURIComponent(event.dive_info?.notes ?? '')}`,
-              `dives=${encodeURIComponent(JSON.stringify(dives))}`,
-            ].join('&');
-            router.push(`/${communityId}/events/${eventId}/dive?${qs}`);
-          } : undefined}
-          actionIcon="create-outline"
-        >
+      {/* ── タブコンテンツ ── */}
+      {activeTab === 'photos' ? (
+        <View style={styles.tabContent}>
+          {canEdit || event.unidentified_count > 0 ? (
+            <View style={styles.tabActionRow}>
+              {event.unidentified_count > 0 ? (
+                <Text style={styles.sectionBadge}>未同定 {event.unidentified_count}枚</Text>
+              ) : null}
+              {canEdit ? (
+                <Pressable onPress={pickAndUpload} disabled={uploading} hitSlop={12}>
+                  {uploading
+                    ? <ActivityIndicator size="small" color={colors.primary} />
+                    : <Ionicons name="camera-outline" size={20} color={colors.primary} />}
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+          <PhotoGrid
+            photos={event.photos ?? []}
+            tileSize={tileSize}
+            communityId={communityId}
+            eventId={eventId}
+            eventName={event.name}
+            canEdit={canEdit}
+            dives={dives}
+          />
+        </View>
+      ) : activeTab === 'dive' ? (
+        <View style={styles.tabContent}>
+          {canEdit ? (
+            <View style={styles.tabActionRow}>
+              <Pressable
+                hitSlop={12}
+                onPress={() => {
+                  const qs = [
+                    `weather=${encodeURIComponent(event.dive_info?.weather ?? '')}`,
+                    `notes=${encodeURIComponent(event.dive_info?.notes ?? '')}`,
+                    `dives=${encodeURIComponent(JSON.stringify(dives))}`,
+                  ].join('&');
+                  router.push(`/${communityId}/events/${eventId}/dive?${qs}`);
+                }}
+              >
+                <Ionicons name="create-outline" size={20} color={colors.primary} />
+              </Pressable>
+            </View>
+          ) : null}
           {event.dive_info && (dives.length > 0 || event.dive_info.weather || event.dive_info.notes) ? (
             <>
               {event.dive_info.weather ? (
@@ -378,54 +407,52 @@ export default function EventDetailScreen() {
           ) : (
             <Text style={styles.diveEmpty}>ダイブ情報がまだ入力されていません</Text>
           )}
-        </SectionBlock>
-      ) : null}
-
-      {/* ── 参加メンバー ── */}
-      <SectionBlock
-        icon="people-outline"
-        title={`参加メンバー（${accepted.length + 1}人）`}
-        onAction={isOrganizer ? () => router.push(`/${communityId}/events/${eventId}/invite`) : undefined}
-        actionIcon="person-add-outline"
-      >
-        <MemberChips
-          organizer={event.organizer_name}
-          accepted={accepted}
-          invited={invitedMembers}
-          // メンバーを外せるのは主催者だけ、開催中だけ
-          onRemove={isOrganizer && isOpen ? removeMember : undefined}
-          removingId={removingId}
-        />
-      </SectionBlock>
-
-      {/* ── イベントの管理（主催者・コミュニティ管理者） ── */}
-      {(isOrganizer && isOpen) || canDelete ? (
-        <View style={styles.manage}>
-          {isOrganizer && isOpen ? (
-            <View style={styles.manageItem}>
-              <Button title="イベントを終了する" variant="secondary" onPress={closeEvent} loading={managing === 'close'} disabled={managing !== null} />
-              <Text style={styles.manageHint}>レポートの準備に進みます。写真の追加・編集は締め切られます。</Text>
+        </View>
+      ) : (
+        <View style={styles.tabContent}>
+          {isOrganizer ? (
+            <View style={styles.tabActionRow}>
+              <Pressable hitSlop={12} onPress={() => router.push(`/${communityId}/events/${eventId}/invite`)}>
+                <Ionicons name="person-add-outline" size={20} color={colors.primary} />
+              </Pressable>
             </View>
           ) : null}
-          {canDelete ? (
-            <Pressable
-              onPress={deleteEvent}
-              disabled={managing !== null}
-              accessibilityRole="button"
-              style={styles.deleteButton}
-            >
-              {managing === 'delete' ? (
-                <ActivityIndicator size="small" color={colors.danger} />
-              ) : (
-                <>
-                  <Ionicons name="trash-outline" size={16} color={colors.danger} />
-                  <Text style={styles.deleteText}>イベントを削除</Text>
-                </>
-              )}
-            </Pressable>
+          <MemberChips
+            organizer={event.organizer_name}
+            accepted={accepted}
+            invited={invitedMembers}
+            onRemove={isOrganizer && isOpen ? removeMember : undefined}
+            removingId={removingId}
+          />
+          {(isOrganizer && isOpen) || canDelete ? (
+            <View style={styles.manage}>
+              {isOrganizer && isOpen ? (
+                <View style={styles.manageItem}>
+                  <Button title="イベントを終了する" variant="secondary" onPress={closeEvent} loading={managing === 'close'} disabled={managing !== null} />
+                  <Text style={styles.manageHint}>レポートの準備に進みます。写真の追加・編集は締め切られます。</Text>
+                </View>
+              ) : null}
+              {canDelete ? (
+                <Pressable
+                  onPress={deleteEvent}
+                  disabled={managing !== null}
+                  accessibilityRole="button"
+                  style={styles.deleteButton}
+                >
+                  {managing === 'delete' ? (
+                    <ActivityIndicator size="small" color={colors.danger} />
+                  ) : (
+                    <>
+                      <Ionicons name="trash-outline" size={16} color={colors.danger} />
+                      <Text style={styles.deleteText}>イベントを削除</Text>
+                    </>
+                  )}
+                </Pressable>
+              ) : null}
+            </View>
           ) : null}
         </View>
-      ) : null}
+      )}
     </ScrollView>
 
     {pendingUpload ? (
@@ -1054,7 +1081,39 @@ const styles = StyleSheet.create({
   photoName: { fontSize: 12, fontWeight: '600', color: colors.text },
   photoNameMissing: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic' },
   photoSci: { fontSize: 11, color: colors.textSub, fontStyle: 'italic' },
-  manage: { marginTop: 8, paddingTop: 20, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, gap: 16 },
+  // タブ
+  tabBar: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    marginTop: 12,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 11,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+    marginBottom: -1,
+  },
+  tabActive: { borderBottomColor: colors.primary },
+  tabText: { fontSize: 13, fontWeight: '600', color: colors.textSub },
+  tabTextActive: { color: colors.primary },
+  tabCount: { fontSize: 12, color: colors.textMuted },
+  tabCountActive: { color: colors.primary },
+  tabDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#f59e0b' },
+  tabContent: { padding: 16, paddingBottom: 32 },
+  tabActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  manage: { marginTop: 24, paddingTop: 20, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, gap: 16 },
   manageItem: { gap: 6 },
   manageHint: { fontSize: 12, color: colors.textSub, textAlign: 'center' },
   deleteButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 },
