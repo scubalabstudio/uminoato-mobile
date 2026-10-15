@@ -143,6 +143,10 @@ export interface EventPhoto {
   thumbnail_url: string;
   display_url: string;
   uploaded_at: string;
+  camera_make: string | null;
+  camera_model: string | null;
+  housing_id: number | null;
+  lens_id: number | null;
 }
 
 export interface EventUserSearchResult {

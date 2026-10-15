@@ -42,6 +42,62 @@ export async function searchCreatures(
   }
 }
 
+// ── 機材 ──────────────────────────────────────────────────────────────────
+
+export interface Camera {
+  id: number;
+  brand: string | null;
+  model: string;
+  display_name: string | null;
+}
+export interface Housing { id: number; brand: string | null; model: string; }
+export interface Lens    { id: number; brand: string | null; model: string; }
+
+function dedupById<T extends { id: number }>(items: (T | null)[]): T[] {
+  const seen = new Set<number>();
+  return items.filter((item): item is T => {
+    if (!item || seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
+export async function searchCameras(q: string): Promise<Camera[]> {
+  if (q.length < 1) return [];
+  const enc = encodeURIComponent(q);
+  const url = `${SUPABASE_URL}/rest/v1/cameras?or=(model.ilike.*${enc}*,brand.ilike.*${enc}*)&limit=10&select=id,model,brand,display_name&order=model.asc`;
+  const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
+  try {
+    const res = await fetch(url, { headers });
+    if (!res.ok) return [];
+    return res.json();
+  } catch { return []; }
+}
+
+export async function fetchHousingsForCamera(cameraId: number): Promise<Housing[]> {
+  const url = `${SUPABASE_URL}/rest/v1/camera_housing_lenses?camera_id=eq.${cameraId}&housing_id=not.is.null&select=housings!housing_id(id,model,brand)`;
+  const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
+  try {
+    const res = await fetch(url, { headers });
+    if (!res.ok) return [];
+    const rows: { housings: Housing | null }[] = await res.json();
+    return dedupById(rows.map(r => r.housings));
+  } catch { return []; }
+}
+
+export async function fetchLensesForCameraHousing(cameraId: number, housingId: number): Promise<Lens[]> {
+  const url = `${SUPABASE_URL}/rest/v1/camera_housing_lenses?camera_id=eq.${cameraId}&housing_id=eq.${housingId}&lens_id=not.is.null&select=lenses!lens_id(id,model,brand)`;
+  const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
+  try {
+    const res = await fetch(url, { headers });
+    if (!res.ok) return [];
+    const rows: { lenses: Lens | null }[] = await res.json();
+    return dedupById(rows.map(r => r.lenses));
+  } catch { return []; }
+}
+
+// ── 生き物 ────────────────────────────────────────────────────────────────
+
 export async function fetchCreatureById(id: number): Promise<CreatureDetail | null> {
   // 1. メモリキャッシュ（最速）
   if (memoryCache.has(id)) return memoryCache.get(id)!;

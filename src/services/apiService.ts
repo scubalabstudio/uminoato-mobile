@@ -390,11 +390,27 @@ export async function uploadEventPhoto(
   diveSortOrder?: number,
   mimeType = 'image/jpeg',
   ext = 'jpg',
+  meta?: {
+    japanese_name?: string;
+    scientific_name?: string;
+    creature_id?: number;
+    camera_make?: string;
+    camera_model?: string;
+    housing_id?: number;
+    lens_id?: number;
+  },
 ): Promise<EventPhoto> {
   const form = new FormData();
   form.append('image', { uri: fileUri, name: `photo.${ext}`, type: mimeType } as unknown as Blob);
   form.append('is_diving_photo', isDiving ? '1' : '0');
   if (diveSortOrder != null) form.append('dive_sort_order', String(diveSortOrder));
+  if (meta?.japanese_name) form.append('japanese_name', meta.japanese_name);
+  if (meta?.scientific_name) form.append('scientific_name', meta.scientific_name);
+  if (meta?.creature_id != null) form.append('creature_id', String(meta.creature_id));
+  if (meta?.camera_make) form.append('camera_make', meta.camera_make);
+  if (meta?.camera_model) form.append('camera_model', meta.camera_model);
+  if (meta?.housing_id != null) form.append('housing_id', String(meta.housing_id));
+  if (meta?.lens_id != null) form.append('lens_id', String(meta.lens_id));
   const res = await uploadForm<{ photo: EventPhoto }>(
     `communities/${communityId}/events/${eventId}/photos`,
     form,

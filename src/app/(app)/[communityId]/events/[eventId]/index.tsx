@@ -1,16 +1,20 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -21,6 +25,11 @@ import { colors } from '@/constants/theme';
 import { useCommunity } from '@/context/CommunityContext';
 import { useSession } from '@/context/SessionContext';
 import * as api from '@/services/apiService';
+import {
+  type Camera, type Housing, type Lens,
+  fetchHousingsForCamera, fetchLensesForCameraHousing,
+  searchCameras, searchCreatures,
+} from '@/services/supabaseService';
 import type { CommunityEventDetail, Dive, EventMember, EventPhoto } from '@/types';
 import { formatDateRange } from '@/utils/date';
 
@@ -35,6 +44,7 @@ export default function EventDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [responding, setResponding] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [pendingUpload, setPendingUpload] = useState<{ uri: string; mimeType: string; ext: string } | null>(null);
   const [managing, setManaging] = useState<'close' | 'delete' | null>(null);
   const [removingId, setRemovingId] = useState<number | null>(null);
   const { width: screenWidth } = useWindowDimensions();
@@ -74,40 +84,37 @@ export default function EventDetailScreen() {
     });
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
-    const uri = asset.uri;
     const mimeType = asset.mimeType ?? 'image/jpeg';
     const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') ?? 'jpg';
-    Alert.alert('写真の種類', 'この写真はダイビング中に撮影しましたか？', [
-      {
-        text: 'ダイビング写真',
-        onPress: async () => {
-          setUploading(true);
-          try {
-            await api.uploadEventPhoto(communityId, eventId, uri, true, undefined, mimeType, ext);
-            await load();
-          } catch (e) {
-            if (!handleApiError(e)) Alert.alert('アップロードエラー', errorMessage(e));
-          } finally {
-            setUploading(false);
-          }
+    setPendingUpload({ uri: asset.uri, mimeType, ext });
+  };
+
+  const doUpload = async (params: UploadSubmitParams) => {
+    if (!pendingUpload) return;
+    const { uri, mimeType, ext } = pendingUpload;
+    setPendingUpload(null);
+    setUploading(true);
+    try {
+      await api.uploadEventPhoto(
+        communityId, eventId, uri, params.isDiving,
+        params.diveSortOrder ?? undefined,
+        mimeType, ext,
+        {
+          japanese_name: params.jaName || undefined,
+          scientific_name: params.sciName || undefined,
+          creature_id: params.creatureId ?? undefined,
+          camera_make: params.cameraMake || undefined,
+          camera_model: params.cameraModel || undefined,
+          housing_id: params.housingId ?? undefined,
+          lens_id: params.lensId ?? undefined,
         },
-      },
-      {
-        text: 'その他の写真',
-        onPress: async () => {
-          setUploading(true);
-          try {
-            await api.uploadEventPhoto(communityId, eventId, uri, false, undefined, mimeType, ext);
-            await load();
-          } catch (e) {
-            if (!handleApiError(e)) Alert.alert('アップロードエラー', errorMessage(e));
-          } finally {
-            setUploading(false);
-          }
-        },
-      },
-      { text: 'キャンセル', style: 'cancel' },
-    ]);
+      );
+      await load();
+    } catch (e) {
+      if (!handleApiError(e)) Alert.alert('アップロードエラー', errorMessage(e));
+    } finally {
+      setUploading(false);
+    }
   };
 
   const isGuest = !communities.some((c) => c.id === communityId);
@@ -255,6 +262,7 @@ export default function EventDetailScreen() {
   ) : undefined;
 
   return (
+    <>
     <ScrollView
       contentContainerStyle={styles.container}
       contentInsetAdjustmentBehavior="automatic"
@@ -419,6 +427,315 @@ export default function EventDetailScreen() {
         </View>
       ) : null}
     </ScrollView>
+
+    {pendingUpload ? (
+      <UploadModal
+        uri={pendingUpload.uri}
+        dives={dives}
+        onSubmit={doUpload}
+        onCancel={() => setPendingUpload(null)}
+      />
+    ) : null}
+    </>
+  );
+}
+
+// ── 型 ─────────────────────────────────────────────────────────────────────
+
+interface UploadSubmitParams {
+  isDiving: boolean;
+  diveSortOrder: number | null;
+  jaName: string;
+  sciName: string;
+  creatureId: number | null;
+  cameraMake: string;
+  cameraModel: string;
+  housingId: number | null;
+  lensId: number | null;
+}
+
+// ── UploadModal ────────────────────────────────────────────────────────────
+
+function UploadModal({
+  uri, dives, onSubmit, onCancel,
+}: {
+  uri: string;
+  dives: Dive[];
+  onSubmit: (p: UploadSubmitParams) => void;
+  onCancel: () => void;
+}) {
+  const { width: screenWidth } = useWindowDimensions();
+  const previewH = Math.round(screenWidth * 0.45);
+
+  const [isDiving, setIsDiving] = useState(true);
+  const [diveSortOrder, setDiveSortOrder] = useState<number | null>(null);
+
+  const [jaName, setJaName] = useState('');
+  const [sciName, setSciName] = useState('');
+  const [creatureId, setCreatureId] = useState<number | null>(null);
+  const [creatureSuggestions, setCreatureSuggestions] = useState<{ id: number; name: string; scientific_name: string | null }[]>([]);
+
+  const [cameraQuery, setCameraQuery] = useState('');
+  const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
+  const [cameraSuggestions, setCameraSuggestions] = useState<Camera[]>([]);
+  const [activeSearch, setActiveSearch] = useState<'creature' | 'camera' | null>(null);
+
+  const [housings, setHousings] = useState<Housing[]>([]);
+  const [selectedHousing, setSelectedHousing] = useState<Housing | null>(null);
+  const [lenses, setLenses] = useState<Lens[]>([]);
+  const [selectedLens, setSelectedLens] = useState<Lens | null>(null);
+
+  const creatureDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cameraDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setHousings([]); setSelectedHousing(null); setLenses([]); setSelectedLens(null);
+    if (!selectedCamera) return;
+    fetchHousingsForCamera(selectedCamera.id).then(setHousings);
+  }, [selectedCamera]);
+
+  useEffect(() => {
+    setLenses([]); setSelectedLens(null);
+    if (!selectedCamera || !selectedHousing) return;
+    fetchLensesForCameraHousing(selectedCamera.id, selectedHousing.id).then(setLenses);
+  }, [selectedCamera, selectedHousing]);
+
+  const onJaChange = (text: string) => {
+    setJaName(text); setCreatureId(null); setActiveSearch('creature');
+    if (creatureDebounce.current) clearTimeout(creatureDebounce.current);
+    creatureDebounce.current = setTimeout(async () => {
+      setCreatureSuggestions(await searchCreatures(text));
+    }, 400);
+  };
+
+  const selectCreature = (item: { id: number; name: string; scientific_name: string | null }) => {
+    setJaName(item.name); setSciName(item.scientific_name ?? '');
+    setCreatureId(item.id); setCreatureSuggestions([]); setActiveSearch(null);
+  };
+
+  const onCameraChange = (text: string) => {
+    setCameraQuery(text); setSelectedCamera(null); setActiveSearch('camera');
+    if (cameraDebounce.current) clearTimeout(cameraDebounce.current);
+    cameraDebounce.current = setTimeout(async () => {
+      setCameraSuggestions(await searchCameras(text));
+    }, 300);
+  };
+
+  const selectCamera = (cam: Camera) => {
+    setSelectedCamera(cam);
+    setCameraQuery(cam.display_name ?? `${cam.brand ?? ''} ${cam.model}`.trim());
+    setCameraSuggestions([]); setActiveSearch(null);
+  };
+
+  const clearCamera = () => {
+    setSelectedCamera(null); setCameraQuery(''); setCameraSuggestions([]);
+  };
+
+  const suggestions = activeSearch === 'creature' ? creatureSuggestions : activeSearch === 'camera' ? cameraSuggestions : [];
+
+  const submit = (skipMeta: boolean) => {
+    onSubmit({
+      isDiving,
+      diveSortOrder: isDiving ? diveSortOrder : null,
+      jaName:       isDiving && !skipMeta ? jaName.trim() : '',
+      sciName:      isDiving && !skipMeta ? sciName.trim() : '',
+      creatureId:   isDiving && !skipMeta ? creatureId : null,
+      cameraMake:   !skipMeta ? (selectedCamera?.brand ?? '') : '',
+      cameraModel:  !skipMeta ? (selectedCamera ? (selectedCamera.display_name ?? selectedCamera.model) : '') : '',
+      housingId:    !skipMeta ? (selectedHousing?.id ?? null) : null,
+      lensId:       !skipMeta ? (selectedLens?.id ?? null) : null,
+    });
+  };
+
+  const cameraLabel = (cam: Camera) =>
+    cam.display_name ?? `${cam.brand ?? ''} ${cam.model}`.trim();
+  const housingLabel = (h: Housing) =>
+    h.brand ? `${h.brand} ${h.model}` : h.model;
+  const lensLabel = (l: Lens) =>
+    l.brand ? `${l.brand} ${l.model}` : l.model;
+
+  return (
+    <View style={ulStyles.root}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
+
+      {activeSearch === 'creature' && creatureSuggestions.length > 0 ? (
+        <View style={ulStyles.suggestions}>
+          <FlatList
+            data={creatureSuggestions}
+            keyExtractor={item => String(item.id)}
+            keyboardShouldPersistTaps="always"
+            renderItem={({ item }) => (
+              <Pressable style={ulStyles.suggRow} onPress={() => selectCreature(item)}>
+                <Text style={ulStyles.suggName}>{item.name}</Text>
+                {item.scientific_name ? <Text style={ulStyles.suggSci}>{item.scientific_name}</Text> : null}
+              </Pressable>
+            )}
+          />
+        </View>
+      ) : activeSearch === 'camera' && cameraSuggestions.length > 0 ? (
+        <View style={ulStyles.suggestions}>
+          <FlatList
+            data={cameraSuggestions}
+            keyExtractor={item => String(item.id)}
+            keyboardShouldPersistTaps="always"
+            renderItem={({ item }) => (
+              <Pressable style={ulStyles.suggRow} onPress={() => selectCamera(item)}>
+                <Text style={ulStyles.suggName}>{cameraLabel(item)}</Text>
+              </Pressable>
+            )}
+          />
+        </View>
+      ) : null}
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={ulStyles.sheet}
+      >
+        <View style={ulStyles.toolbar}>
+          <Pressable onPress={onCancel} hitSlop={12}>
+            <Text style={ulStyles.cancel}>キャンセル</Text>
+          </Pressable>
+          <Text style={ulStyles.title}>写真の情報を入力</Text>
+          <Pressable onPress={() => submit(false)} hitSlop={12}>
+            <Text style={ulStyles.done}>登録する</Text>
+          </Pressable>
+        </View>
+
+        <ScrollView contentContainerStyle={ulStyles.body} keyboardShouldPersistTaps="handled">
+          <Image source={{ uri }} style={[ulStyles.preview, { height: previewH }]} resizeMode="cover" />
+
+          {/* 写真の種別 */}
+          <View style={ulStyles.field}>
+            <Text style={ulStyles.label}>写真の種別</Text>
+            <View style={ulStyles.typeRow}>
+              {[{ key: true, text: 'ダイビング' }, { key: false, text: 'その他' }].map(({ key, text }) => (
+                <Pressable
+                  key={String(key)}
+                  style={[ulStyles.typeBtn, isDiving === key && ulStyles.typeBtnOn]}
+                  onPress={() => setIsDiving(key)}
+                >
+                  <Text style={[ulStyles.typeTxt, isDiving === key && ulStyles.typeTxtOn]}>{text}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          {/* ダイブ選択 */}
+          {isDiving && dives.length > 0 ? (
+            <View style={ulStyles.field}>
+              <Text style={ulStyles.label}>ダイブ（任意）</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ulStyles.chipsRow}>
+                {dives.map(d => (
+                  <Pressable
+                    key={d.sort_order}
+                    style={[ulStyles.chip, diveSortOrder === d.sort_order && ulStyles.chipOn]}
+                    onPress={() => setDiveSortOrder(diveSortOrder === d.sort_order ? null : d.sort_order)}
+                  >
+                    <Text style={[ulStyles.chipTxt, diveSortOrder === d.sort_order && ulStyles.chipTxtOn]}>
+                      {d.sort_order}本目{d.dive_site ? ` · ${d.dive_site}` : ''}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+
+          {/* 生き物名（ダイビング写真のみ） */}
+          {isDiving ? (
+            <>
+              <View style={ulStyles.field}>
+                <Text style={ulStyles.label}>和名（任意）</Text>
+                <TextInput
+                  style={ulStyles.input}
+                  value={jaName}
+                  onChangeText={onJaChange}
+                  placeholder="例: アカククリ"
+                  placeholderTextColor={colors.textMuted}
+                  autoCorrect={false}
+                />
+              </View>
+              <View style={ulStyles.field}>
+                <Text style={ulStyles.label}>学名（任意）</Text>
+                <TextInput
+                  style={ulStyles.input}
+                  value={sciName}
+                  onChangeText={v => { setSciName(v); setCreatureId(null); }}
+                  placeholder="例: Platax pinnatus"
+                  placeholderTextColor={colors.textMuted}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                />
+              </View>
+            </>
+          ) : null}
+
+          {/* 機材 */}
+          <View style={ulStyles.divider} />
+          <View style={ulStyles.field}>
+            <Text style={ulStyles.label}>カメラ（任意）</Text>
+            {selectedCamera ? (
+              <View style={ulStyles.selectedRow}>
+                <Text style={ulStyles.selectedTxt} numberOfLines={1}>{cameraLabel(selectedCamera)}</Text>
+                <Pressable onPress={clearCamera} hitSlop={8}>
+                  <Ionicons name="close-circle" size={17} color={colors.textMuted} />
+                </Pressable>
+              </View>
+            ) : (
+              <TextInput
+                style={ulStyles.input}
+                value={cameraQuery}
+                onChangeText={onCameraChange}
+                placeholder="例: TG-6, OM-5"
+                placeholderTextColor={colors.textMuted}
+                autoCorrect={false}
+              />
+            )}
+          </View>
+
+          {selectedCamera && housings.length > 0 ? (
+            <View style={ulStyles.field}>
+              <Text style={ulStyles.label}>ハウジング（任意）</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ulStyles.chipsRow}>
+                {housings.map(h => (
+                  <Pressable
+                    key={h.id}
+                    style={[ulStyles.chip, selectedHousing?.id === h.id && ulStyles.chipOn]}
+                    onPress={() => setSelectedHousing(selectedHousing?.id === h.id ? null : h)}
+                  >
+                    <Text style={[ulStyles.chipTxt, selectedHousing?.id === h.id && ulStyles.chipTxtOn]}>
+                      {housingLabel(h)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+
+          {selectedCamera && selectedHousing && lenses.length > 0 ? (
+            <View style={ulStyles.field}>
+              <Text style={ulStyles.label}>レンズ（任意）</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ulStyles.chipsRow}>
+                {lenses.map(l => (
+                  <Pressable
+                    key={l.id}
+                    style={[ulStyles.chip, selectedLens?.id === l.id && ulStyles.chipOn]}
+                    onPress={() => setSelectedLens(selectedLens?.id === l.id ? null : l)}
+                  >
+                    <Text style={[ulStyles.chipTxt, selectedLens?.id === l.id && ulStyles.chipTxtOn]}>
+                      {lensLabel(l)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+
+          <Pressable style={ulStyles.skipBtn} onPress={() => submit(true)}>
+            <Text style={ulStyles.skipTxt}>情報なしで登録</Text>
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -751,4 +1068,77 @@ const styles = StyleSheet.create({
   manageHint: { fontSize: 12, color: colors.textSub, textAlign: 'center' },
   deleteButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 },
   deleteText: { fontSize: 14, color: colors.danger, fontWeight: '500' },
+});
+
+// ── UploadModal スタイル ────────────────────────────────────────────────────
+
+const ulStyles = StyleSheet.create({
+  root: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
+  suggestions: {
+    maxHeight: 180,
+    backgroundColor: colors.card,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  suggRow: {
+    paddingHorizontal: 16, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: colors.border, gap: 2,
+  },
+  suggName: { fontSize: 14, fontWeight: '600', color: colors.text },
+  suggSci:  { fontSize: 12, color: colors.textSub, fontStyle: 'italic' },
+
+  sheet: {
+    backgroundColor: colors.card,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    maxHeight: '90%',
+  },
+  toolbar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  title:  { fontSize: 15, fontWeight: '600', color: colors.text },
+  cancel: { fontSize: 15, color: colors.textSub },
+  done:   { fontSize: 15, fontWeight: '600', color: colors.primary },
+
+  body: { padding: 16, paddingBottom: 40, gap: 14 },
+  preview: { width: '100%', borderRadius: 12 },
+
+  field: { gap: 6 },
+  label: { fontSize: 13, fontWeight: '600', color: colors.text },
+  input: {
+    borderWidth: 1, borderColor: colors.border, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10, fontSize: 15,
+    color: colors.text, backgroundColor: colors.bg,
+  },
+
+  typeRow: { flexDirection: 'row', gap: 8 },
+  typeBtn: {
+    flex: 1, paddingVertical: 9, borderRadius: 10, borderWidth: 1,
+    borderColor: colors.border, alignItems: 'center',
+  },
+  typeBtnOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  typeTxt:   { fontSize: 13, fontWeight: '600', color: colors.textSub },
+  typeTxtOn: { color: '#fff' },
+
+  chipsRow: { flexDirection: 'row', gap: 8, paddingVertical: 2 },
+  chip: {
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg,
+  },
+  chipOn:    { borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  chipTxt:   { fontSize: 13, color: colors.textSub },
+  chipTxtOn: { color: colors.primary, fontWeight: '600' },
+
+  divider: { height: 1, backgroundColor: colors.border, marginVertical: 4 },
+
+  selectedRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderWidth: 1, borderColor: colors.primary, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10, backgroundColor: colors.primaryLight,
+  },
+  selectedTxt: { fontSize: 15, color: colors.primary, fontWeight: '500', flex: 1 },
+
+  skipBtn: { paddingVertical: 12, alignItems: 'center' },
+  skipTxt: { fontSize: 14, color: colors.textMuted },
 });
