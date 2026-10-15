@@ -341,6 +341,7 @@ export default function EventDetailScreen() {
           tileSize={tileSize}
           communityId={communityId}
           eventId={eventId}
+          eventName={event.name}
           canEdit={canEdit}
           dives={dives}
         />
@@ -858,12 +859,13 @@ function DiveRow({ dive }: { dive: Dive }) {
 }
 
 function PhotoGrid({
-  photos, tileSize, communityId, eventId, canEdit, dives,
+  photos, tileSize, communityId, eventId, eventName, canEdit, dives,
 }: {
   photos: EventPhoto[];
   tileSize: number;
   communityId: number;
   eventId: number;
+  eventName: string;
   canEdit: boolean;
   dives: Dive[];
 }) {
@@ -893,6 +895,7 @@ function PhotoGrid({
               `mine=${photo.is_mine ? 1 : 0}`,
               `dso=${photo.dive_sort_order ?? ''}`,
               `dives=${encodeURIComponent(JSON.stringify(diveOpts))}`,
+              `ename=${encodeURIComponent(eventName)}`,
             ].join('&');
             router.push(`/${communityId}/events/${eventId}/photos/${photo.id}?${qs}`);
           }}

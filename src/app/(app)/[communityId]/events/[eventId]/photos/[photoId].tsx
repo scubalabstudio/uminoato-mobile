@@ -36,7 +36,7 @@ export default function PhotoDetailScreen() {
     url?: string; name?: string; sci?: string;
     uploader?: string; cid?: string; dive?: string;
     edit?: string; mine?: string;
-    dso?: string; dives?: string;
+    dso?: string; dives?: string; ename?: string;
   }>();
 
   const communityId = Number(params.communityId);
@@ -180,7 +180,7 @@ export default function PhotoDetailScreen() {
   const displayUrl = photo?.display_url ?? initUrl ?? '';
   const isDiving = photo ? photo.is_diving_photo : initDiving;
   const uploaderName = photo ? photo.uploader_name : initUploader;
-  const title = displayJaName ?? (isDiving ? '未同定' : '写真');
+  const title = params.ename ? decodeURIComponent(params.ename) : '写真';
 
   const headerRight = canEdit ? () => (
     <Pressable onPress={openEdit} hitSlop={12} style={{ marginRight: 8 }}>
