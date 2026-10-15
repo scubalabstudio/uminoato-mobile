@@ -76,6 +76,27 @@ async function request<T>(
   return body as T;
 }
 
+// Expo SDK 57のネイティブfetchは { uri, name, type } 形式のFormDataPartを非サポート。
+// ファイルアップロードにはXMLHttpRequestを使う（RNの旧FormDataフォーマットに対応）
+async function uploadForm<T>(path: string, form: FormData): Promise<T> {
+  const token = await getAccessToken();
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${BACKEND_URL}/api/${path}`);
+    xhr.setRequestHeader('Accept', 'application/json');
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.onload = () => {
+      if (xhr.status === 401) { reject(new UnauthorizedError()); return; }
+      let body: unknown = null;
+      if (xhr.status !== 204) { try { body = JSON.parse(xhr.responseText); } catch {} }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(body as T);
+      else reject(new ApiError(xhr.status, errorMessage(body, xhr.status)));
+    };
+    xhr.onerror = () => reject(new ApiError(0, '通信エラーが発生しました。電波の良い場所で再度お試しください。'));
+    xhr.send(form);
+  });
+}
+
 // ── 認証 ──────────────────────────────────────────────────────────────────
 
 // identifier はユーザーIDまたはメールアドレス（@ を含めばメールとして扱われる）
@@ -180,12 +201,8 @@ export async function updateCommunitySettings(communityId: number, settings: Com
 // サーバー側で正方形にクロップ・512px に縮小・WebP 化される。送れるのは JPEG/PNG/WebP/HEIC、5MB まで
 export async function uploadCommunityIcon(communityId: number, fileUri: string): Promise<Community> {
   const form = new FormData();
-  // React Native の FormData はファイルを { uri, name, type } で渡す
   form.append('icon', { uri: fileUri, name: 'icon.jpg', type: 'image/jpeg' } as unknown as Blob);
-  const res = await request<{ community: Community }>(`communities/${communityId}/icon`, {
-    method: 'POST',
-    body: form,
-  });
+  const res = await uploadForm<{ community: Community }>(`communities/${communityId}/icon`, form);
   return res.community;
 }
 
@@ -378,9 +395,9 @@ export async function uploadEventPhoto(
   form.append('image', { uri: fileUri, name: `photo.${ext}`, type: mimeType } as unknown as Blob);
   form.append('is_diving_photo', isDiving ? '1' : '0');
   if (diveSortOrder != null) form.append('dive_sort_order', String(diveSortOrder));
-  const res = await request<{ photo: EventPhoto }>(
+  const res = await uploadForm<{ photo: EventPhoto }>(
     `communities/${communityId}/events/${eventId}/photos`,
-    { method: 'POST', body: form },
+    form,
   );
   return res.photo;
 }

@@ -86,7 +86,7 @@ export default function EventDetailScreen() {
             await api.uploadEventPhoto(communityId, eventId, uri, true, undefined, mimeType, ext);
             await load();
           } catch (e) {
-            if (!handleApiError(e)) Alert.alert('エラー', '写真のアップロードに失敗しました');
+            if (!handleApiError(e)) Alert.alert('アップロードエラー', errorMessage(e));
           } finally {
             setUploading(false);
           }
@@ -100,7 +100,7 @@ export default function EventDetailScreen() {
             await api.uploadEventPhoto(communityId, eventId, uri, false, undefined, mimeType, ext);
             await load();
           } catch (e) {
-            if (!handleApiError(e)) Alert.alert('エラー', '写真のアップロードに失敗しました');
+            if (!handleApiError(e)) Alert.alert('アップロードエラー', errorMessage(e));
           } finally {
             setUploading(false);
           }
