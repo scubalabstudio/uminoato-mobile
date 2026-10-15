@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 
 import { Button, errorMessage } from '@/components/ui';
+import { isOwner } from '@/constants/roles';
 import { colors } from '@/constants/theme';
 import { useCommunity } from '@/context/CommunityContext';
 import { useSession } from '@/context/SessionContext';
@@ -28,12 +29,14 @@ export default function EventDetailScreen() {
   const communityId = Number(params.communityId);
   const eventId = Number(params.eventId);
   const { handleApiError } = useSession();
-  const { communities, invitedEvents, respondEventInvitation } = useCommunity();
+  const { communities, invitedEvents, respondEventInvitation, reload } = useCommunity();
   const [event, setEvent] = useState<CommunityEventDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [responding, setResponding] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [managing, setManaging] = useState<'close' | 'delete' | null>(null);
+  const [removingId, setRemovingId] = useState<number | null>(null);
   const { width: screenWidth } = useWindowDimensions();
 
   const load = useCallback(async () => {
@@ -105,6 +108,96 @@ export default function EventDetailScreen() {
   };
 
   const isGuest = !communities.some((c) => c.id === communityId);
+
+  // 主催者でなくなった・終了済みになった等で拒否されたときは、エラーを出して最新の状態を読み直す
+  const onManageError = (e: unknown) => {
+    if (handleApiError(e)) return;
+    Alert.alert(errorMessage(e));
+    load();
+  };
+
+  // Web版の「レポートの準備をする」と同じ。終了すると写真の追加・編集ができなくなる（取り消せない）
+  const closeEvent = () => {
+    if (!event) return;
+    const unidentified = event.unidentified_count > 0
+      ? `\n\n未同定の写真が${event.unidentified_count}件あります。終了後も未同定一覧へ送ることはできます。`
+      : '';
+    Alert.alert(
+      'イベントを終了しますか？',
+      `レポートの準備に進みます。メンバーは写真の追加・編集ができなくなり、元には戻せません。${unidentified}`,
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '終了する',
+          style: 'destructive',
+          onPress: async () => {
+            setManaging('close');
+            try {
+              await api.closeEvent(communityId, eventId);
+              await load();
+              reload();
+            } catch (e) {
+              onManageError(e);
+            } finally {
+              setManaging(null);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const deleteEvent = () => {
+    if (!event) return;
+    Alert.alert(
+      `「${event.name}」を削除しますか？`,
+      'メンバー・写真・ダイブ情報・レポートもすべて削除され、元には戻せません。図鑑・未同定へ送った写真は残ります。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '削除する',
+          style: 'destructive',
+          onPress: async () => {
+            setManaging('delete');
+            try {
+              await api.deleteEvent(communityId, eventId);
+              reload();
+              router.back();
+            } catch (e) {
+              onManageError(e);
+              setManaging(null);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const removeMember = (member: EventMember) => {
+    const name = member.name ?? '退会したユーザー';
+    Alert.alert(
+      `${name}さんをイベントから外しますか？`,
+      member.status === 'invited' ? '招待を取り消します。' : 'このイベントの参加メンバーから外れます。アップロードした写真は残ります。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '外す',
+          style: 'destructive',
+          onPress: async () => {
+            setRemovingId(member.id);
+            try {
+              await api.removeEventMember(communityId, eventId, member.id);
+              await load();
+            } catch (e) {
+              onManageError(e);
+            } finally {
+              setRemovingId(null);
+            }
+          },
+        },
+      ],
+    );
+  };
   const communityName =
     communities.find((c) => c.id === communityId)?.name ??
     invitedEvents.find((ev) => ev.community_id === communityId)?.community_name;
@@ -135,6 +228,8 @@ export default function EventDetailScreen() {
   const isOpen = event.status === 'open';
   const isOrganizer = event.is_organizer;
   const canEdit = event.member_status === 'organizer' || (event.member_status === 'accepted' && event.members_can_edit);
+  // 削除は主催者かコミュニティ管理者（終了後もできる）
+  const canDelete = isOrganizer || isOwner(communities.find((c) => c.id === communityId)?.role);
 
   const headerRight = isOrganizer ? () => (
     <Pressable
@@ -285,8 +380,40 @@ export default function EventDetailScreen() {
           organizer={event.organizer_name}
           accepted={accepted}
           invited={invitedMembers}
+          // メンバーを外せるのは主催者だけ、開催中だけ
+          onRemove={isOrganizer && isOpen ? removeMember : undefined}
+          removingId={removingId}
         />
       </SectionBlock>
+
+      {/* ── イベントの管理（主催者・コミュニティ管理者） ── */}
+      {(isOrganizer && isOpen) || canDelete ? (
+        <View style={styles.manage}>
+          {isOrganizer && isOpen ? (
+            <View style={styles.manageItem}>
+              <Button title="イベントを終了する" variant="secondary" onPress={closeEvent} loading={managing === 'close'} disabled={managing !== null} />
+              <Text style={styles.manageHint}>レポートの準備に進みます。写真の追加・編集は締め切られます。</Text>
+            </View>
+          ) : null}
+          {canDelete ? (
+            <Pressable
+              onPress={deleteEvent}
+              disabled={managing !== null}
+              accessibilityRole="button"
+              style={styles.deleteButton}
+            >
+              {managing === 'delete' ? (
+                <ActivityIndicator size="small" color={colors.danger} />
+              ) : (
+                <>
+                  <Ionicons name="trash-outline" size={16} color={colors.danger} />
+                  <Text style={styles.deleteText}>イベントを削除</Text>
+                </>
+              )}
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
@@ -337,32 +464,58 @@ function MemberChips({
   organizer,
   accepted,
   invited,
+  onRemove,
+  removingId,
 }: {
   organizer: string | null;
   accepted: EventMember[];
   invited: EventMember[];
+  onRemove?: (member: EventMember) => void;
+  removingId?: number | null;
 }) {
+  // 自分（主催者）以外を外せる。外せるチップには × を付ける
+  const remove = (m: EventMember) => (onRemove && !m.is_me ? () => onRemove(m) : undefined);
   return (
     <View style={styles.chipsWrap}>
       <Chip name={organizer ?? '退会したユーザー'} role="主催" isMe={false} />
       {accepted.map((m) => (
-        <Chip key={m.id} name={m.name ?? '退会したユーザー'} isMe={m.is_me} />
+        <Chip key={m.id} name={m.name ?? '退会したユーザー'} isMe={m.is_me} onRemove={remove(m)} removing={removingId === m.id} />
       ))}
       {invited.map((m) => (
-        <Chip key={m.id} name={m.name ?? '退会したユーザー'} isMe={m.is_me} pending />
+        <Chip key={m.id} name={m.name ?? '退会したユーザー'} isMe={m.is_me} pending onRemove={remove(m)} removing={removingId === m.id} />
       ))}
     </View>
   );
 }
 
-function Chip({ name, role, isMe, pending }: { name: string; role?: string; isMe: boolean; pending?: boolean }) {
+function Chip({
+  name, role, isMe, pending, onRemove, removing,
+}: {
+  name: string;
+  role?: string;
+  isMe: boolean;
+  pending?: boolean;
+  onRemove?: () => void;
+  removing?: boolean;
+}) {
   return (
-    <View style={[styles.chip, pending && styles.chipPending]}>
+    <Pressable
+      onPress={onRemove}
+      disabled={!onRemove || removing}
+      accessibilityRole={onRemove ? 'button' : undefined}
+      accessibilityHint={onRemove ? 'イベントから外す' : undefined}
+      style={[styles.chip, pending && styles.chipPending, onRemove && styles.chipRemovable]}
+    >
       <Text style={[styles.chipText, pending && styles.chipTextPending]} numberOfLines={1}>
         {isMe ? `${name}（あなた）` : name}
         {role ? `　${role}` : ''}
       </Text>
-    </View>
+      {removing ? (
+        <ActivityIndicator size="small" color={colors.textSub} />
+      ) : onRemove ? (
+        <Ionicons name="close" size={14} color={colors.textSub} />
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -559,6 +712,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   chipPending: { borderStyle: 'dashed', borderColor: colors.textMuted },
+  chipRemovable: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   chipText: { fontSize: 13, color: colors.text },
   chipTextPending: { color: colors.textSub },
 
@@ -584,4 +738,9 @@ const styles = StyleSheet.create({
   photoName: { fontSize: 12, fontWeight: '600', color: colors.text },
   photoNameMissing: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic' },
   photoSci: { fontSize: 11, color: colors.textSub, fontStyle: 'italic' },
+  manage: { marginTop: 8, paddingTop: 20, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, gap: 16 },
+  manageItem: { gap: 6 },
+  manageHint: { fontSize: 12, color: colors.textSub, textAlign: 'center' },
+  deleteButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 },
+  deleteText: { fontSize: 14, color: colors.danger, fontWeight: '500' },
 });

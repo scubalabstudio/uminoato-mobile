@@ -12,6 +12,8 @@ interface SessionValue {
   signIn: (identifier: string, password: string) => Promise<void>;
   completeRegistration: (email: string, code: string) => Promise<void>;
   signOut: () => Promise<void>;
+  // 退会。成功するとログイン画面に戻る。失敗（パスワード違い・オーナーで退会できない等）は ApiError を投げる
+  deleteAccount: (password: string) => Promise<void>;
   // 401 なら「ログインの有効期限が切れました」を出してログアウトし、true を返す（Web版の useApiErrorHandler と同じ扱い）
   handleApiError: (e: unknown) => boolean;
 }
@@ -73,6 +75,11 @@ export function SessionProvider({ children }: PropsWithChildren) {
     setUser(null);
   }, []);
 
+  const deleteAccount = useCallback(async (password: string) => {
+    await api.deleteAccount(password);
+    setUser(null);
+  }, []);
+
   const handleApiError = useCallback((e: unknown) => {
     if (!(e instanceof api.UnauthorizedError)) return false;
     Alert.alert(e.message);
@@ -81,8 +88,8 @@ export function SessionProvider({ children }: PropsWithChildren) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, isLoading, signIn, completeRegistration, signOut, handleApiError }),
-    [user, isLoading, signIn, completeRegistration, signOut, handleApiError],
+    () => ({ user, isLoading, signIn, completeRegistration, signOut, deleteAccount, handleApiError }),
+    [user, isLoading, signIn, completeRegistration, signOut, deleteAccount, handleApiError],
   );
 
   return <SessionContext value={value}>{children}</SessionContext>;

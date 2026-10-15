@@ -90,6 +90,13 @@ export async function login(
   });
 }
 
+// 退会。本人確認にパスワードが要る。他のメンバーがいるコミュニティのオーナーは 422（先にオーナーの移譲が必要）
+// 成功するとバックエンドで全端末のトークンが失効するので、この端末の資格情報も消す
+export async function deleteAccount(password: string): Promise<void> {
+  await request('auth/account', { method: 'DELETE', body: JSON.stringify({ password }) });
+  await clearCredentials();
+}
+
 // バックエンドでこの端末のトークンだけを失効させる。通信に失敗しても端末の資格情報は削除する
 export async function logout(): Promise<void> {
   try {
@@ -403,6 +410,25 @@ export async function deleteEventPhoto(
     `communities/${communityId}/events/${eventId}/photos/${photoId}`,
     { method: 'DELETE' },
   );
+}
+
+// 主催者のみ・開催中のみ。Web版の「レポートの準備をする」。取り消せず、以後は写真の追加・編集ができなくなる
+export async function closeEvent(communityId: number, eventId: number): Promise<CommunityEvent> {
+  const res = await request<{ event: CommunityEvent }>(
+    `communities/${communityId}/events/${eventId}/close`,
+    { method: 'POST' },
+  );
+  return res.event;
+}
+
+// 主催者またはコミュニティ管理者。メンバー・写真・ダイブ情報・レポートもまとめて消える（図鑑・未同定へ送った写真は残る）
+export async function deleteEvent(communityId: number, eventId: number): Promise<void> {
+  await request(`communities/${communityId}/events/${eventId}`, { method: 'DELETE' });
+}
+
+// 主催者のみ・開催中のみ。招待中・参加中のどちらも外せる（主催者自身は外せない）
+export async function removeEventMember(communityId: number, eventId: number, memberId: number): Promise<void> {
+  await request(`communities/${communityId}/events/${eventId}/members/${memberId}`, { method: 'DELETE' });
 }
 
 export async function inviteEventMember(

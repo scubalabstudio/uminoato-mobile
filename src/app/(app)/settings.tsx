@@ -1,4 +1,5 @@
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Button } from '@/components/ui';
 import { colors } from '@/constants/theme';
@@ -29,6 +30,10 @@ export default function SettingsScreen() {
       </View>
 
       <Button title="ログアウト" variant="secondary" onPress={confirmSignOut} />
+
+      <Pressable onPress={() => router.push('/withdraw')} accessibilityRole="button" style={styles.withdraw}>
+        <Text style={styles.withdrawText}>退会する</Text>
+      </Pressable>
     </ScrollView>
   );
 }
@@ -60,4 +65,6 @@ const styles = StyleSheet.create({
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
   label: { fontSize: 14, color: colors.textSub },
   value: { fontSize: 14, color: colors.text, flexShrink: 1 },
+  withdraw: { alignSelf: 'center', paddingVertical: 12, paddingHorizontal: 16 },
+  withdrawText: { fontSize: 14, color: colors.danger },
 });

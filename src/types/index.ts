@@ -125,7 +125,8 @@ export interface EventMember {
   id: number;
   user_id: number;
   name: string | null; // 退会済みなら null
-  status: EventMemberStatus;
+  // 主催者自身の行は organizer（外せない）
+  status: EventMemberStatus | 'organizer';
   is_me: boolean;
 }
 

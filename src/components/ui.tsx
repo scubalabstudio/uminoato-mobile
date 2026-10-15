@@ -22,10 +22,12 @@ export function Button({
   onPress: () => void;
   loading?: boolean;
   disabled?: boolean;
-  variant?: 'primary' | 'secondary';
+  // danger: 退会・削除など取り消せない操作
+  variant?: 'primary' | 'secondary' | 'danger';
 }) {
   const inactive = disabled || loading;
   const primary = variant === 'primary';
+  const filled = primary || variant === 'danger';
   return (
     <Pressable
       onPress={onPress}
@@ -34,14 +36,14 @@ export function Button({
       accessibilityState={{ disabled: inactive, busy: loading }}
       style={({ pressed }) => [
         styles.button,
-        primary ? styles.buttonPrimary : styles.buttonSecondary,
+        primary ? styles.buttonPrimary : variant === 'danger' ? styles.buttonDanger : styles.buttonSecondary,
         (pressed || inactive) && { opacity: 0.6 },
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={primary ? colors.white : colors.primary} />
+        <ActivityIndicator color={filled ? colors.white : colors.primary} />
       ) : (
-        <Text style={[styles.buttonText, !primary && { color: colors.primary }]}>{title}</Text>
+        <Text style={[styles.buttonText, !filled && { color: colors.primary }]}>{title}</Text>
       )}
     </Pressable>
   );
@@ -83,6 +85,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   buttonPrimary: { backgroundColor: colors.primary },
+  buttonDanger: { backgroundColor: colors.danger },
   buttonSecondary: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
   buttonText: { color: colors.white, fontSize: 16, fontWeight: '600' },
   field: { gap: 6 },
