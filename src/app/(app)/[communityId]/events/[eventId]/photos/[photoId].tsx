@@ -101,14 +101,25 @@ export default function PhotoDetailScreen() {
   }, [communityId, eventId, photoId, handleApiError, initUrl]);
 
   const creatureId = photo?.creature_id ?? initCreatureId;
+  const jaNameForLookup = photo?.japanese_name ?? initName;
+
   useEffect(() => {
-    if (!creatureId) return;
     let cancelled = false;
-    fetchCreatureById(creatureId)
-      .then((c) => { if (!cancelled) setCreature(c); })
-      .catch(() => {});
+    if (creatureId) {
+      fetchCreatureById(creatureId)
+        .then((c) => { if (!cancelled) setCreature(c); })
+        .catch(() => {});
+    } else if (jaNameForLookup && jaNameForLookup.length >= 2) {
+      // creature_id 未設定の古い写真は和名で検索してフォールバック
+      searchCreatures(jaNameForLookup).then(async (results) => {
+        if (cancelled || results.length === 0) return;
+        const match = results.find(r => r.name === jaNameForLookup) ?? results[0];
+        const c = await fetchCreatureById(match.id);
+        if (!cancelled) setCreature(c);
+      }).catch(() => {});
+    }
     return () => { cancelled = true; };
-  }, [creatureId]);
+  }, [creatureId, jaNameForLookup]);
 
   const openEdit = () => {
     setEditJaName(displayJaName ?? '');
