@@ -5,7 +5,6 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -478,7 +477,6 @@ function UploadModal({
   const [cameraQuery, setCameraQuery] = useState('');
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
   const [cameraSuggestions, setCameraSuggestions] = useState<Camera[]>([]);
-  const [activeSearch, setActiveSearch] = useState<'creature' | 'camera' | null>(null);
 
   const [housings, setHousings] = useState<Housing[]>([]);
   const [selectedHousing, setSelectedHousing] = useState<Housing | null>(null);
@@ -501,7 +499,7 @@ function UploadModal({
   }, [selectedCamera, selectedHousing]);
 
   const onJaChange = (text: string) => {
-    setJaName(text); setCreatureId(null); setActiveSearch('creature');
+    setJaName(text); setCreatureId(null);
     if (creatureDebounce.current) clearTimeout(creatureDebounce.current);
     creatureDebounce.current = setTimeout(async () => {
       setCreatureSuggestions(await searchCreatures(text));
@@ -510,11 +508,11 @@ function UploadModal({
 
   const selectCreature = (item: { id: number; name: string; scientific_name: string | null }) => {
     setJaName(item.name); setSciName(item.scientific_name ?? '');
-    setCreatureId(item.id); setCreatureSuggestions([]); setActiveSearch(null);
+    setCreatureId(item.id); setCreatureSuggestions([]);
   };
 
   const onCameraChange = (text: string) => {
-    setCameraQuery(text); setSelectedCamera(null); setActiveSearch('camera');
+    setCameraQuery(text); setSelectedCamera(null);
     if (cameraDebounce.current) clearTimeout(cameraDebounce.current);
     cameraDebounce.current = setTimeout(async () => {
       setCameraSuggestions(await searchCameras(text));
@@ -524,14 +522,12 @@ function UploadModal({
   const selectCamera = (cam: Camera) => {
     setSelectedCamera(cam);
     setCameraQuery(cam.display_name ?? `${cam.brand ?? ''} ${cam.model}`.trim());
-    setCameraSuggestions([]); setActiveSearch(null);
+    setCameraSuggestions([]);
   };
 
   const clearCamera = () => {
     setSelectedCamera(null); setCameraQuery(''); setCameraSuggestions([]);
   };
-
-  const suggestions = activeSearch === 'creature' ? creatureSuggestions : activeSearch === 'camera' ? cameraSuggestions : [];
 
   const submit = (skipMeta: boolean) => {
     onSubmit({
@@ -557,35 +553,6 @@ function UploadModal({
   return (
     <View style={ulStyles.root}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
-
-      {activeSearch === 'creature' && creatureSuggestions.length > 0 ? (
-        <View style={ulStyles.suggestions}>
-          <FlatList
-            data={creatureSuggestions}
-            keyExtractor={item => String(item.id)}
-            keyboardShouldPersistTaps="always"
-            renderItem={({ item }) => (
-              <Pressable style={ulStyles.suggRow} onPress={() => selectCreature(item)}>
-                <Text style={ulStyles.suggName}>{item.name}</Text>
-                {item.scientific_name ? <Text style={ulStyles.suggSci}>{item.scientific_name}</Text> : null}
-              </Pressable>
-            )}
-          />
-        </View>
-      ) : activeSearch === 'camera' && cameraSuggestions.length > 0 ? (
-        <View style={ulStyles.suggestions}>
-          <FlatList
-            data={cameraSuggestions}
-            keyExtractor={item => String(item.id)}
-            keyboardShouldPersistTaps="always"
-            renderItem={({ item }) => (
-              <Pressable style={ulStyles.suggRow} onPress={() => selectCamera(item)}>
-                <Text style={ulStyles.suggName}>{cameraLabel(item)}</Text>
-              </Pressable>
-            )}
-          />
-        </View>
-      ) : null}
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -653,6 +620,16 @@ function UploadModal({
                   placeholderTextColor={colors.textMuted}
                   autoCorrect={false}
                 />
+                {creatureSuggestions.length > 0 ? (
+                  <View style={ulStyles.suggestions}>
+                    {creatureSuggestions.map(item => (
+                      <Pressable key={String(item.id)} style={ulStyles.suggRow} onPress={() => selectCreature(item)}>
+                        <Text style={ulStyles.suggName}>{item.name}</Text>
+                        {item.scientific_name ? <Text style={ulStyles.suggSci}>{item.scientific_name}</Text> : null}
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
               </View>
               <View style={ulStyles.field}>
                 <Text style={ulStyles.label}>学名（任意）</Text>
@@ -681,14 +658,25 @@ function UploadModal({
                 </Pressable>
               </View>
             ) : (
-              <TextInput
-                style={ulStyles.input}
-                value={cameraQuery}
-                onChangeText={onCameraChange}
-                placeholder="例: TG-6, OM-5"
-                placeholderTextColor={colors.textMuted}
-                autoCorrect={false}
-              />
+              <>
+                <TextInput
+                  style={ulStyles.input}
+                  value={cameraQuery}
+                  onChangeText={onCameraChange}
+                  placeholder="例: TG-6, OM-5"
+                  placeholderTextColor={colors.textMuted}
+                  autoCorrect={false}
+                />
+                {cameraSuggestions.length > 0 ? (
+                  <View style={ulStyles.suggestions}>
+                    {cameraSuggestions.map(cam => (
+                      <Pressable key={String(cam.id)} style={ulStyles.suggRow} onPress={() => selectCamera(cam)}>
+                        <Text style={ulStyles.suggName}>{cameraLabel(cam)}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
+              </>
             )}
           </View>
 
@@ -1075,10 +1063,13 @@ const styles = StyleSheet.create({
 const ulStyles = StyleSheet.create({
   root: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
   suggestions: {
-    maxHeight: 180,
+    maxHeight: 200,
     backgroundColor: colors.card,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginTop: 2,
   },
   suggRow: {
     paddingHorizontal: 16, paddingVertical: 10,
