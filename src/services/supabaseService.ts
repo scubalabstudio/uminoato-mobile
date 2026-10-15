@@ -158,8 +158,7 @@ export async function fetchCreatureById(id: number): Promise<CreatureDetail | nu
     AsyncStorage.setItem(CACHE_KEY(id), JSON.stringify({ data: result, fetchedAt: Date.now() })).catch(() => {});
 
     return result;
-  } catch (e) {
-    console.error('[Supabase] fetch exception =', e);
+  } catch {
     return null;
   }
 }
