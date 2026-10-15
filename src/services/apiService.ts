@@ -3,9 +3,14 @@ import { clearCredentials, getAccessToken } from './authService';
 import {
   Community,
   CommunityEvent,
-  CommunityMember,
   CommunityEventDetail,
   CommunityInvitation,
+  CommunityMember,
+  Dive,
+  DiveInfo,
+  EventMember,
+  EventPhoto,
+  EventUserSearchResult,
   MyInvitation,
   MyInvitedEvent,
   PageMeta,
@@ -254,6 +259,17 @@ export async function fetchMyInvitedEvents(): Promise<MyInvitedEvent[]> {
   return res.events;
 }
 
+export async function fetchEventPhoto(
+  communityId: number,
+  eventId: number,
+  photoId: number,
+): Promise<EventPhoto> {
+  const res = await request<{ photo: EventPhoto }>(
+    `communities/${communityId}/events/${eventId}/photos/${photoId}`,
+  );
+  return res.photo;
+}
+
 export async function respondEventInvitation(
   communityId: number,
   eventId: number,
@@ -278,6 +294,24 @@ export async function fetchEvents(
   return request(`communities/${communityId}/events?status=${status}&page=${page}`);
 }
 
+export async function createEvent(
+  communityId: number,
+  params: {
+    name: string;
+    description?: string;
+    start_date?: string;
+    end_date?: string;
+    external_public?: boolean;
+    members_can_edit?: boolean;
+  },
+): Promise<CommunityEvent> {
+  const res = await request<{ event: CommunityEvent }>(`communities/${communityId}/events`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+  return res.event;
+}
+
 export async function fetchEvent(
   communityId: number,
   eventId: number,
@@ -286,4 +320,105 @@ export async function fetchEvent(
     `communities/${communityId}/events/${eventId}`,
   );
   return res.event;
+}
+
+export async function updateEvent(
+  communityId: number,
+  eventId: number,
+  params: {
+    name?: string;
+    description?: string | null;
+    start_date?: string | null;
+    end_date?: string | null;
+    external_public?: boolean;
+    members_can_edit?: boolean;
+  },
+): Promise<CommunityEvent> {
+  const res = await request<{ event: CommunityEvent }>(
+    `communities/${communityId}/events/${eventId}`,
+    { method: 'PATCH', body: JSON.stringify(params) },
+  );
+  return res.event;
+}
+
+export async function updateEventDiveInfo(
+  communityId: number,
+  eventId: number,
+  params: { weather?: string | null; notes?: string | null; dives?: Dive[] },
+): Promise<DiveInfo> {
+  const res = await request<{ dive_info: DiveInfo }>(
+    `communities/${communityId}/events/${eventId}/dive-info`,
+    { method: 'PATCH', body: JSON.stringify(params) },
+  );
+  return res.dive_info;
+}
+
+export async function uploadEventPhoto(
+  communityId: number,
+  eventId: number,
+  fileUri: string,
+  isDiving: boolean,
+  diveSortOrder?: number,
+): Promise<EventPhoto> {
+  const form = new FormData();
+  form.append('image', { uri: fileUri, name: 'photo.jpg', type: 'image/jpeg' } as unknown as Blob);
+  form.append('is_diving_photo', isDiving ? '1' : '0');
+  if (diveSortOrder != null) form.append('dive_sort_order', String(diveSortOrder));
+  const res = await request<{ photo: EventPhoto }>(
+    `communities/${communityId}/events/${eventId}/photos`,
+    { method: 'POST', body: form },
+  );
+  return res.photo;
+}
+
+export async function updateEventPhoto(
+  communityId: number,
+  eventId: number,
+  photoId: number,
+  params: {
+    japanese_name?: string | null;
+    scientific_name?: string | null;
+    creature_id?: number | null;
+    is_identified?: boolean;
+  },
+): Promise<EventPhoto> {
+  const res = await request<{ photo: EventPhoto }>(
+    `communities/${communityId}/events/${eventId}/photos/${photoId}`,
+    { method: 'PATCH', body: JSON.stringify(params) },
+  );
+  return res.photo;
+}
+
+export async function deleteEventPhoto(
+  communityId: number,
+  eventId: number,
+  photoId: number,
+): Promise<void> {
+  await request(
+    `communities/${communityId}/events/${eventId}/photos/${photoId}`,
+    { method: 'DELETE' },
+  );
+}
+
+export async function inviteEventMember(
+  communityId: number,
+  eventId: number,
+  userId: number,
+): Promise<EventMember> {
+  const res = await request<{ member: EventMember }>(
+    `communities/${communityId}/events/${eventId}/members`,
+    { method: 'POST', body: JSON.stringify({ user_id: userId }) },
+  );
+  return res.member;
+}
+
+export async function searchEventUsers(
+  communityId: number,
+  eventId: number,
+  q: string,
+): Promise<EventUserSearchResult[]> {
+  const res = await request<{ users: EventUserSearchResult[] }>(
+    `communities/${communityId}/events/${eventId}/user-search?q=${encodeURIComponent(q)}`,
+  );
+  return res.users;
 }

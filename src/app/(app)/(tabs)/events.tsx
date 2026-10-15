@@ -1,4 +1,5 @@
-import { useFocusEffect } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
@@ -36,8 +37,18 @@ const EMPTY_TEXT: Record<Filter, string> = {
 export default function EventsTab() {
   const { current } = useCommunity();
   if (!current) return null;
-  // コミュニティを切り替えたら、選択中のタブ・読み込んだ一覧をリセットする
-  return <EventsList key={current.id} communityId={current.id} />;
+  return (
+    <View style={{ flex: 1 }}>
+      <EventsList key={current.id} communityId={current.id} />
+      <Pressable
+        style={styles.fab}
+        onPress={() => router.push(`/${current.id}/events/new`)}
+        accessibilityLabel="新規イベントを作成"
+      >
+        <Ionicons name="add" size={28} color="#fff" />
+      </Pressable>
+    </View>
+  );
 }
 
 function EventsList({ communityId }: { communityId: number }) {
@@ -260,4 +271,20 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 14, color: colors.danger, textAlign: 'center' },
   closedToggle: { alignItems: 'center', paddingVertical: 16 },
   closedToggleText: { fontSize: 13, color: colors.primary, fontWeight: '600' },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 6,
+  },
 });

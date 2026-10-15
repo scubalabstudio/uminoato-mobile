@@ -129,9 +129,31 @@ export interface EventMember {
   is_me: boolean;
 }
 
-// 詳細（show）のみの追加項目。photos は写真画面の実装時に型を足す
+export interface EventPhoto {
+  id: number;
+  uploader_name: string | null;
+  is_mine: boolean;
+  is_diving_photo: boolean;
+  dive_sort_order: number | null;
+  japanese_name: string | null;
+  scientific_name: string | null;
+  creature_id: number | null;
+  is_identified: boolean;
+  thumbnail_url: string;
+  display_url: string;
+  uploaded_at: string;
+}
+
+export interface EventUserSearchResult {
+  user_id: number;
+  display_id: string | null;
+  name: string;
+}
+
+// 詳細（show）のみの追加項目
 export interface CommunityEventDetail extends CommunityEvent {
   member_status: 'organizer' | EventMemberStatus | null;
   members: EventMember[];
+  photos: EventPhoto[];
   reports: Record<string, string> | null;
 }
