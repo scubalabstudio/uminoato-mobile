@@ -371,9 +371,11 @@ export async function uploadEventPhoto(
   fileUri: string,
   isDiving: boolean,
   diveSortOrder?: number,
+  mimeType = 'image/jpeg',
+  ext = 'jpg',
 ): Promise<EventPhoto> {
   const form = new FormData();
-  form.append('image', { uri: fileUri, name: 'photo.jpg', type: 'image/jpeg' } as unknown as Blob);
+  form.append('image', { uri: fileUri, name: `photo.${ext}`, type: mimeType } as unknown as Blob);
   form.append('is_diving_photo', isDiving ? '1' : '0');
   if (diveSortOrder != null) form.append('dive_sort_order', String(diveSortOrder));
   const res = await request<{ photo: EventPhoto }>(

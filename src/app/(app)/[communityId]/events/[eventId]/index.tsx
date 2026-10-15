@@ -69,18 +69,21 @@ export default function EventDetailScreen() {
 
   const pickAndUpload = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'] as ImagePicker.MediaType[],
       quality: 0.85,
     });
     if (result.canceled || !result.assets[0]) return;
-    const uri = result.assets[0].uri;
+    const asset = result.assets[0];
+    const uri = asset.uri;
+    const mimeType = asset.mimeType ?? 'image/jpeg';
+    const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') ?? 'jpg';
     Alert.alert('写真の種類', 'この写真はダイビング中に撮影しましたか？', [
       {
         text: 'ダイビング写真',
         onPress: async () => {
           setUploading(true);
           try {
-            await api.uploadEventPhoto(communityId, eventId, uri, true);
+            await api.uploadEventPhoto(communityId, eventId, uri, true, undefined, mimeType, ext);
             await load();
           } catch (e) {
             if (!handleApiError(e)) Alert.alert('エラー', '写真のアップロードに失敗しました');
@@ -94,7 +97,7 @@ export default function EventDetailScreen() {
         onPress: async () => {
           setUploading(true);
           try {
-            await api.uploadEventPhoto(communityId, eventId, uri, false);
+            await api.uploadEventPhoto(communityId, eventId, uri, false, undefined, mimeType, ext);
             await load();
           } catch (e) {
             if (!handleApiError(e)) Alert.alert('エラー', '写真のアップロードに失敗しました');
