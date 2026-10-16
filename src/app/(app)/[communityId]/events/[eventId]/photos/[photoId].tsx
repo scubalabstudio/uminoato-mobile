@@ -58,6 +58,9 @@ export default function PhotoDetailScreen() {
 
   const [photo, setPhoto] = useState<EventPhoto | null>(null);
   const [creature, setCreature] = useState<CreatureDetail | null>(null);
+  const [creatureLoading, setCreatureLoading] = useState(
+    !!(initCreatureId || (initName && initName.length >= 2)),
+  );
   const [fetching, setFetching] = useState(!initUrl);
 
   // 同定モーダル
@@ -106,17 +109,21 @@ export default function PhotoDetailScreen() {
   useEffect(() => {
     let cancelled = false;
     if (creatureId) {
+      setCreatureLoading(true);
       fetchCreatureById(creatureId)
-        .then((c) => { if (!cancelled) setCreature(c); })
-        .catch(() => {});
+        .then((c) => { if (!cancelled) { setCreature(c); setCreatureLoading(false); } })
+        .catch(() => { if (!cancelled) setCreatureLoading(false); });
     } else if (jaNameForLookup && jaNameForLookup.length >= 2) {
-      // creature_id 未設定の古い写真は和名で検索してフォールバック
+      setCreatureLoading(true);
       searchCreatures(jaNameForLookup).then(async (results) => {
-        if (cancelled || results.length === 0) return;
+        if (cancelled) return;
+        if (results.length === 0) { setCreatureLoading(false); return; }
         const match = results.find(r => r.name === jaNameForLookup) ?? results[0];
         const c = await fetchCreatureById(match.id);
-        if (!cancelled) setCreature(c);
-      }).catch(() => {});
+        if (!cancelled) { setCreature(c); setCreatureLoading(false); }
+      }).catch(() => { if (!cancelled) setCreatureLoading(false); });
+    } else {
+      setCreatureLoading(false);
     }
     return () => { cancelled = true; };
   }, [creatureId, jaNameForLookup]);
@@ -245,23 +252,29 @@ export default function PhotoDetailScreen() {
           {uploaderName ? <Text style={styles.uploader}>by {uploaderName}</Text> : null}
         </View>
 
-        {creature ? (
+        {(creatureLoading || creature) ? (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Ionicons name="fish-outline" size={14} color={colors.primary} />
               <Text style={styles.sectionTitle}>生き物情報</Text>
             </View>
-            {creature.description ? <InfoBlock label="説明" value={creature.description} multiline /> : null}
-            {creature.habitat ? <InfoBlock label="生息地・場所" value={creature.habitat} multiline /> : null}
-            {(creature.size || creature.depth_range || creature.rarity) ? (
-              <View style={styles.statsRow}>
-                {creature.size ? <StatCell label="大きさ" value={creature.size} /> : null}
-                {creature.depth_range ? <StatCell label="水深" value={creature.depth_range} /> : null}
-                {creature.rarity ? <StatCell label="希少度" value={creature.rarity} /> : null}
-              </View>
-            ) : null}
-            {(creature.category || creature.subcategory) ? (
-              <InfoBlock label="カテゴリ" value={[creature.category, creature.subcategory].filter(Boolean).join(' › ')} />
+            {creatureLoading ? (
+              <ActivityIndicator color={colors.primary} style={{ paddingVertical: 12 }} />
+            ) : creature ? (
+              <>
+                {creature.description ? <InfoBlock label="説明" value={creature.description} multiline /> : null}
+                {creature.habitat ? <InfoBlock label="生息地・場所" value={creature.habitat} multiline /> : null}
+                {(creature.size || creature.depth_range || creature.rarity) ? (
+                  <View style={styles.statsRow}>
+                    {creature.size ? <StatCell label="大きさ" value={creature.size} /> : null}
+                    {creature.depth_range ? <StatCell label="水深" value={creature.depth_range} /> : null}
+                    {creature.rarity ? <StatCell label="希少度" value={creature.rarity} /> : null}
+                  </View>
+                ) : null}
+                {(creature.category || creature.subcategory) ? (
+                  <InfoBlock label="カテゴリ" value={[creature.category, creature.subcategory].filter(Boolean).join(' › ')} />
+                ) : null}
+              </>
             ) : null}
           </View>
         ) : null}
