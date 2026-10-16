@@ -10,6 +10,7 @@ import { colors } from '@/constants/theme';
 import { useCommunity } from '@/context/CommunityContext';
 import { useSession } from '@/context/SessionContext';
 import * as api from '@/services/apiService';
+import { getHistory, removeFromHistory, type HistoryEntry } from '@/services/browsingHistoryService';
 import type { CommunityEvent, MyInvitedEvent } from '@/types';
 
 type Segment = 'mine' | 'all';
@@ -54,6 +55,7 @@ export default function EventsTab() {
 function EventsList({ communityId }: { communityId: number }) {
   const { handleApiError } = useSession();
   const { invitedEvents, reload } = useCommunity();
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
 
   // my-events には主催イベントも「参加済み」として入る（作成時に主催者もメンバー登録されるため）
   const mine = useMemo(
@@ -127,10 +129,11 @@ function EventsList({ communityId }: { communityId: number }) {
     }
   };
 
-  // 戻ってきたときに参加状況（my-events）を最新にする
+  // 戻ってきたときに参加状況（my-events）と閲覧履歴を最新にする
   useFocusEffect(
     useCallback(() => {
       reload();
+      getHistory().then(setHistory);
     }, [reload]),
   );
   // 「コミュニティ全体」を初めて表示したときに1ページ目を読む
@@ -154,7 +157,7 @@ function EventsList({ communityId }: { communityId: number }) {
 
   const refresh = async () => {
     setRefreshing(true);
-    await Promise.all([reload(), segment === 'all' ? loadFirst(filter) : null]);
+    await Promise.all([reload(), segment === 'all' ? loadFirst(filter) : null, getHistory().then(setHistory)]);
     setRefreshing(false);
   };
 
@@ -179,18 +182,27 @@ function EventsList({ communityId }: { communityId: number }) {
         renderItem={({ item }) => <EventRow event={item} communityId={communityId} />}
         ListHeaderComponent={header}
         ListFooterComponent={
-          closed.length > 0 ? (
-            <Pressable
-              onPress={() => setShowClosed((v) => !v)}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: showClosed }}
-              style={styles.closedToggle}
-            >
-              <Text style={styles.closedToggleText}>
-                {showClosed ? '終了したイベントを隠す' : `終了したイベント（${closed.length}）を表示`}
-              </Text>
-            </Pressable>
-          ) : null
+          <>
+            {closed.length > 0 ? (
+              <Pressable
+                onPress={() => setShowClosed((v) => !v)}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: showClosed }}
+                style={styles.closedToggle}
+              >
+                <Text style={styles.closedToggleText}>
+                  {showClosed ? '終了したイベントを隠す' : `終了したイベント（${closed.length}）を表示`}
+                </Text>
+              </Pressable>
+            ) : null}
+            <HistorySection
+              entries={history}
+              onRemove={async (id) => {
+                await removeFromHistory(id);
+                setHistory((h) => h.filter((e) => e.eventId !== id));
+              }}
+            />
+          </>
         }
         ListEmptyComponent={
           closed.length > 0 ? null : (
@@ -254,6 +266,48 @@ function EventsList({ communityId }: { communityId: number }) {
   );
 }
 
+function HistorySection({
+  entries,
+  onRemove,
+}: {
+  entries: HistoryEntry[];
+  onRemove: (eventId: number) => void;
+}) {
+  if (entries.length === 0) return null;
+  return (
+    <View style={styles.historySection}>
+      <View style={styles.historyHeader}>
+        <Ionicons name="time-outline" size={14} color={colors.textSub} />
+        <Text style={styles.historyTitle}>最近見た公開イベント</Text>
+      </View>
+      {entries.slice(0, 10).map((entry) => (
+        <Pressable
+          key={entry.eventId}
+          style={styles.historyRow}
+          onPress={() => router.push(`/${entry.communityId}/events/${entry.eventId}`)}
+        >
+          <View style={styles.historyInfo}>
+            {entry.communityName ? (
+              <Text style={styles.historyCommunity} numberOfLines={1}>{entry.communityName}</Text>
+            ) : null}
+            <Text style={styles.historyName} numberOfLines={1}>{entry.name}</Text>
+            {entry.startDate ? (
+              <Text style={styles.historyDate}>{entry.startDate.slice(0, 10)}</Text>
+            ) : null}
+          </View>
+          <Pressable
+            onPress={() => onRemove(entry.eventId)}
+            hitSlop={12}
+            accessibilityLabel="履歴から削除"
+          >
+            <Ionicons name="close" size={16} color={colors.textMuted} />
+          </Pressable>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 // 開催日の新しい順（日付未定は最後）
 function byStartDateDesc(a: MyInvitedEvent, b: MyInvitedEvent): number {
   if (a.start_date === b.start_date) return b.id - a.id;
@@ -271,6 +325,27 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 14, color: colors.danger, textAlign: 'center' },
   closedToggle: { alignItems: 'center', paddingVertical: 16 },
   closedToggleText: { fontSize: 13, color: colors.primary, fontWeight: '600' },
+  historySection: {
+    marginTop: 24,
+    paddingTop: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    gap: 4,
+  },
+  historyHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  historyTitle: { fontSize: 13, fontWeight: '600', color: colors.textSub },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    gap: 8,
+  },
+  historyInfo: { flex: 1, gap: 2 },
+  historyCommunity: { fontSize: 11, color: colors.primary, fontWeight: '600' },
+  historyName: { fontSize: 14, color: colors.text, fontWeight: '500' },
+  historyDate: { fontSize: 12, color: colors.textMuted },
   fab: {
     position: 'absolute',
     right: 20,

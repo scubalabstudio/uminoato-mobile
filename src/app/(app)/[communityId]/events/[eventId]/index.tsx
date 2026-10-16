@@ -29,6 +29,7 @@ import {
   fetchHousingsForCamera, fetchLensesForCameraHousing,
   searchCameras, searchCreatures,
 } from '@/services/supabaseService';
+import { addToHistory } from '@/services/browsingHistoryService';
 import type { CommunityEventDetail, Dive, EventMember, EventPhoto } from '@/types';
 import { formatDateRange } from '@/utils/date';
 
@@ -59,6 +60,19 @@ export default function EventDetailScreen() {
   }, [communityId, eventId, handleApiError]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // 外部公開イベントで非メンバーのとき閲覧履歴に保存
+  useEffect(() => {
+    if (!event?.external_public) return;
+    if (event.member_status !== null) return;
+    addToHistory({
+      communityId,
+      eventId,
+      name: event.name,
+      communityName: communityName ?? null,
+      startDate: event.start_date,
+    });
+  }, [event?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refresh = async () => {
     setRefreshing(true);
