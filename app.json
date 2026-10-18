@@ -9,7 +9,8 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.toruko83.uminoato"
+      "bundleIdentifier": "com.toruko83.uminoato",
+      "associatedDomains": ["applinks:scubalab.vercel.app"]
     },
     "android": {
       "package": "com.toruko83.uminoato",
@@ -19,7 +20,21 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "scubalab.vercel.app",
+              "pathPrefix": "/umi-no-ato"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -27,6 +42,15 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#0E7AF0",
+          "androidMode": "default",
+          "androidCollapsedTitle": "#{unread_notifications} new notifications"
+        }
+      ],
       [
         "expo-image-picker",
         {

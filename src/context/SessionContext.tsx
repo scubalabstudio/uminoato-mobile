@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 
 import * as api from '@/services/apiService';
 import { clearCredentials, getAccessToken, getSavedUser, saveCredentials } from '@/services/authService';
+import { setupPushNotifications, teardownPushNotifications } from '@/services/pushTokenService';
 import type { User } from '@/types';
 
 interface SessionValue {
@@ -39,6 +40,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
       setIsLoading(false);
 
       if (!token) return;
+      setupPushNotifications();
       // 保存済みの表示用情報で先に画面を出し、裏で最新のユーザー情報に更新する。
       // 失効・期限切れなら端末の資格情報を消してログイン画面へ戻す（圏外などは保存済みのまま続行）
       try {
@@ -62,15 +64,18 @@ export function SessionProvider({ children }: PropsWithChildren) {
     const { token, user: signedIn } = await api.login(identifier, password);
     await saveCredentials(token, signedIn);
     setUser(signedIn);
+    setupPushNotifications();
   }, []);
 
   const completeRegistration = useCallback(async (email: string, code: string) => {
     const { token, user: registered } = await api.verifyRegisterCode(email, code);
     await saveCredentials(token, registered);
     setUser(registered);
+    setupPushNotifications();
   }, []);
 
   const signOut = useCallback(async () => {
+    await teardownPushNotifications();
     await api.logout();
     setUser(null);
   }, []);
