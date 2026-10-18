@@ -1,11 +1,13 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as ImagePicker from 'expo-image-picker';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,8 +22,10 @@ import { colors } from '@/constants/theme';
 import { useCommunity } from '@/context/CommunityContext';
 import { useSession } from '@/context/SessionContext';
 import * as api from '@/services/apiService';
-import { fetchCreatureById, type CreatureDetail } from '@/services/supabaseService';
+import { fetchCreatureById, fetchHousingById, fetchLensById, type CreatureDetail, type Housing, type Lens } from '@/services/supabaseService';
 import type { EncyclopediaEntryDetail, EncyclopediaPhoto, Tag } from '@/types';
+import EquipmentSheet, { type EquipmentParams } from '@/components/EquipmentSheet';
+import { parseExifCamera } from '@/utils/exif';
 import { markEncyclopediaStale } from '@/utils/encyclopediaStale';
 
 // 1種あたりの写真の上限（バックエンドの PHOTO_LIMIT）。超えると古い写真から消える
@@ -41,6 +45,20 @@ export default function EncyclopediaEntryScreen() {
   const [error, setError] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [pendingAsset, setPendingAsset] = useState<{ uri: string; mimeType: string; ext: string; exifMake: string | null; exifModel: string | null } | null>(null);
+  const [photoHousing, setPhotoHousing] = useState<Housing | null>(null);
+  const [photoLens, setPhotoLens] = useState<Lens | null>(null);
+
+  useEffect(() => {
+    setPhotoHousing(null);
+    setPhotoLens(null);
+    if (!entry) return;
+    const p = entry.photos[index];
+    if (!p) return;
+    if (p.housing_id) fetchHousingById(p.housing_id).then(setPhotoHousing);
+    if (p.lens_id) fetchLensById(p.lens_id).then(setPhotoLens);
+  }, [index, entry]);
 
   const load = useCallback(async () => {
     try {
@@ -71,6 +89,39 @@ export default function EncyclopediaEntryScreen() {
     // ロールが変わった（403）ときは、編集ボタンを消すためにコミュニティを読み直す
     if (err instanceof api.ApiError && err.status === 403) reload();
     Alert.alert(errorMessage(err));
+  };
+
+  const addPhoto = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'] as ImagePicker.MediaType[],
+      quality: 0.85,
+      exif: true,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    const mimeType = asset.mimeType ?? 'image/jpeg';
+    const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') ?? 'jpg';
+    const { make: exifMake, model: exifModel } = parseExifCamera(asset.exif);
+    setPendingAsset({ uri: asset.uri, mimeType, ext, exifMake, exifModel });
+  };
+
+  const doAddPhoto = async (equipment: EquipmentParams) => {
+    if (!pendingAsset) return;
+    setPendingAsset(null);
+    setUploading(true);
+    try {
+      const updated = await api.addEncyclopediaPhoto(communityId, entryId, {
+        fileUri: pendingAsset.uri, mimeType: pendingAsset.mimeType, ext: pendingAsset.ext,
+        ...equipment,
+      });
+      setEntry(updated);
+      setIndex(updated.photos.length - 1);
+      markEncyclopediaStale();
+    } catch (err) {
+      onEditError(err);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const deletePhoto = (photo: EncyclopediaPhoto) => {
@@ -128,8 +179,46 @@ export default function EncyclopediaEntryScreen() {
   const photo = entry.photos[index] ?? null;
 
   return (
+    <>
+    <Modal
+      visible={pendingAsset !== null}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={() => setPendingAsset(null)}
+    >
+      {pendingAsset ? (
+        <EquipmentSheet
+          uri={pendingAsset.uri}
+          exifMake={pendingAsset.exifMake}
+          exifModel={pendingAsset.exifModel}
+          onSubmit={doAddPhoto}
+          onCancel={() => setPendingAsset(null)}
+        />
+      ) : null}
+    </Modal>
     <ScrollView contentContainerStyle={styles.container} contentInsetAdjustmentBehavior="automatic">
-      <Stack.Screen options={{ title }} />
+      <Stack.Screen
+        options={{
+          title,
+          headerRight: canEdit
+            ? () => (
+                <Pressable
+                  onPress={addPhoto}
+                  disabled={uploading}
+                  accessibilityRole="button"
+                  accessibilityLabel="写真を追加"
+                  hitSlop={8}
+                >
+                  {uploading ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Ionicons name="camera-outline" size={24} color={colors.primary} />
+                  )}
+                </Pressable>
+              )
+            : undefined,
+        }}
+      />
 
       <PhotoPager photos={entry.photos} index={index} onIndexChange={setIndex} />
 
@@ -143,6 +232,16 @@ export default function EncyclopediaEntryScreen() {
             {photo.camera_make || photo.camera_model ? (
               <MetaLine icon="camera-outline">
                 {[photo.camera_make, photo.camera_model].filter(Boolean).join(' ')}
+              </MetaLine>
+            ) : null}
+            {photoHousing ? (
+              <MetaLine icon="layers-outline">
+                {[photoHousing.brand, photoHousing.model].filter(Boolean).join(' ')}
+              </MetaLine>
+            ) : null}
+            {photoLens ? (
+              <MetaLine icon="aperture-outline">
+                {[photoLens.brand, photoLens.model].filter(Boolean).join(' ')}
               </MetaLine>
             ) : null}
           </View>
@@ -187,11 +286,11 @@ export default function EncyclopediaEntryScreen() {
         {canEdit ? (
           <Text style={styles.hint}>
             写真は1種につき{PHOTO_LIMIT}枚まで（今{entry.photos.length}枚）。上限を超えると古い写真から入れ替わります。
-            写真の追加・イベントの写真から図鑑へ送る操作は、今はWeb版で行えます。
           </Text>
         ) : null}
       </View>
     </ScrollView>
+    </>
   );
 }
 
@@ -401,7 +500,7 @@ function Paragraph({ label, children }: { label: string; children: ReactNode }) 
   );
 }
 
-function MetaLine({ icon, children }: { icon: 'person-outline' | 'location-outline' | 'camera-outline'; children: ReactNode }) {
+function MetaLine({ icon, children }: { icon: 'person-outline' | 'location-outline' | 'camera-outline' | 'layers-outline' | 'aperture-outline'; children: ReactNode }) {
   return (
     <View style={styles.metaLine}>
       <Ionicons name={icon} size={14} color={colors.textSub} />
@@ -433,8 +532,8 @@ const styles = StyleSheet.create({
   metaText: { fontSize: 13, color: colors.textSub, flexShrink: 1 },
   deleteButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   body: { padding: 16, gap: 24 },
-  name: { fontSize: 24, fontWeight: '700', color: colors.text },
-  scientific: { fontSize: 15, fontStyle: 'italic', color: colors.textSub, marginTop: 2 },
+  name: { fontSize: 24, fontWeight: '700', color: colors.text, textAlign: 'center' },
+  scientific: { fontSize: 15, fontStyle: 'italic', color: colors.textSub, marginTop: 2, textAlign: 'center' },
   section: { gap: 10 },
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: colors.text },

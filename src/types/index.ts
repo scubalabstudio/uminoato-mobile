@@ -140,6 +140,9 @@ export interface EventPhoto {
   scientific_name: string | null;
   creature_id: number | null;
   is_identified: boolean;
+  pushed_to_community: boolean;
+  pushed_to_encyclopedia: boolean;
+  species_in_encyclopedia: boolean;
   thumbnail_url: string;
   display_url: string;
   uploaded_at: string;
@@ -203,10 +206,10 @@ export interface EncyclopediaEntryDetail extends EncyclopediaEntry {
 
 export type EncyclopediaSort = 'name_asc' | 'scientific_asc' | 'newest' | 'oldest' | 'photos_desc';
 
-// イベントで未同定一覧へPushされ、まだ同定されていない写真
+// イベントで未同定一覧へPushされ、まだ同定されていない写真（event_id はイベント経由でない直接アップロード時は null）
 export interface UnidentifiedPhoto {
   id: number;
-  event_id: number;
+  event_id: number | null;
   event_name: string | null;
   uploader_name: string | null;
   japanese_name: string | null;

@@ -42,6 +42,25 @@ export async function searchCreatures(
   }
 }
 
+export interface DivingPoint {
+  id: number;
+  name: string;
+  prefecture: string | null;
+}
+
+export async function searchDivingPoints(q: string): Promise<DivingPoint[]> {
+  if (q.length < 2) return [];
+  const url = `${SUPABASE_URL}/rest/v1/diving_points?name=ilike.*${encodeURIComponent(q)}*&limit=15&select=id,name,prefecture&order=name.asc`;
+  const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
+  try {
+    const res = await fetch(url, { headers });
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
 // ── 機材 ──────────────────────────────────────────────────────────────────
 
 export interface Camera {
@@ -65,7 +84,7 @@ function dedupById<T extends { id: number }>(items: (T | null)[]): T[] {
 export async function searchCameras(q: string): Promise<Camera[]> {
   if (q.length < 1) return [];
   const enc = encodeURIComponent(q);
-  const url = `${SUPABASE_URL}/rest/v1/cameras?or=(model.ilike.*${enc}*,brand.ilike.*${enc}*)&limit=10&select=id,model,brand,display_name&order=model.asc`;
+  const url = `${SUPABASE_URL}/rest/v1/cameras?or=(model.ilike.*${enc}*,brand.ilike.*${enc}*,display_name.ilike.*${enc}*)&limit=15&select=id,model,brand,display_name&order=model.asc`;
   const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
   try {
     const res = await fetch(url, { headers });
@@ -74,25 +93,88 @@ export async function searchCameras(q: string): Promise<Camera[]> {
   } catch { return []; }
 }
 
+// カメラ一覧はセッション中は不変なのでメモリキャッシュする
+let _allCamerasCache: Camera[] | null = null;
+async function fetchAllCameras(): Promise<Camera[]> {
+  if (_allCamerasCache) return _allCamerasCache;
+  const url = `${SUPABASE_URL}/rest/v1/cameras?select=id,model,brand,display_name&order=model.asc`;
+  const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
+  try {
+    const res = await fetch(url, { headers });
+    if (!res.ok) return [];
+    _allCamerasCache = await res.json();
+    return _allCamerasCache!;
+  } catch { return []; }
+}
+
+/**
+ * WEB版と同じロジック: 全カメラをローカルに取得してモデル名をファジーマッチ。
+ * EXIF のモデル文字列はメーカーによって "E-M1MarkII" / "E-M1 MarkII" など
+ * 表記揺れがあるため、ハイフン・スペースを除去して正規化してから比較する。
+ */
+export async function matchCameraByExif(
+  _make: string | null,
+  model: string | null,
+): Promise<Camera | null> {
+  if (!model) return null;
+  const norm = (s: string) => s.toLowerCase().replace(/[-\s]+/g, '');
+  const nm = norm(model);
+  if (!nm) return null;
+  const cameras = await fetchAllCameras();
+  const exact = cameras.find((c) => norm(c.model) === nm);
+  if (exact) return exact;
+  return cameras.find((c) => { const cm = norm(c.model); return cm.includes(nm) || nm.includes(cm); }) ?? null;
+}
+
+const _housingCache = new Map<number, Housing | null>();
+export async function fetchHousingById(id: number): Promise<Housing | null> {
+  if (_housingCache.has(id)) return _housingCache.get(id)!;
+  const url = `${SUPABASE_URL}/rest/v1/housings?id=eq.${id}&select=id,model,brand&limit=1`;
+  const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
+  try {
+    const res = await fetch(url, { headers });
+    if (!res.ok) { _housingCache.set(id, null); return null; }
+    const data: Housing[] = await res.json();
+    const result = data[0] ?? null;
+    _housingCache.set(id, result);
+    return result;
+  } catch { return null; }
+}
+
+const _lensCache = new Map<number, Lens | null>();
+export async function fetchLensById(id: number): Promise<Lens | null> {
+  if (_lensCache.has(id)) return _lensCache.get(id)!;
+  const url = `${SUPABASE_URL}/rest/v1/lenses?id=eq.${id}&select=id,model,brand&limit=1`;
+  const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
+  try {
+    const res = await fetch(url, { headers });
+    if (!res.ok) { _lensCache.set(id, null); return null; }
+    const data: Lens[] = await res.json();
+    const result = data[0] ?? null;
+    _lensCache.set(id, result);
+    return result;
+  } catch { return null; }
+}
+
 export async function fetchHousingsForCamera(cameraId: number): Promise<Housing[]> {
-  const url = `${SUPABASE_URL}/rest/v1/camera_housing_lenses?camera_id=eq.${cameraId}&housing_id=not.is.null&select=housings!housing_id(id,model,brand)`;
+  const url = `${SUPABASE_URL}/rest/v1/system_charts?camera_id=eq.${cameraId}&housing_id=not.is.null&select=housings(id,model,brand)`;
   const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
   try {
     const res = await fetch(url, { headers });
     if (!res.ok) return [];
     const rows: { housings: Housing | null }[] = await res.json();
-    return dedupById(rows.map(r => r.housings));
+    return dedupById(rows.map(r => r.housings)).sort((a, b) => a.model.localeCompare(b.model));
   } catch { return []; }
 }
 
 export async function fetchLensesForCameraHousing(cameraId: number, housingId: number): Promise<Lens[]> {
-  const url = `${SUPABASE_URL}/rest/v1/camera_housing_lenses?camera_id=eq.${cameraId}&housing_id=eq.${housingId}&lens_id=not.is.null&select=lenses!lens_id(id,model,brand)`;
+  const url = `${SUPABASE_URL}/rest/v1/system_charts?camera_id=eq.${cameraId}&housing_id=eq.${housingId}&lens_id=not.is.null&select=lenses(id,model,brand)`;
   const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
   try {
     const res = await fetch(url, { headers });
     if (!res.ok) return [];
     const rows: { lenses: Lens | null }[] = await res.json();
-    return dedupById(rows.map(r => r.lenses));
+    return dedupById(rows.map(r => r.lenses)).sort((a, b) => a.model.localeCompare(b.model));
   } catch { return []; }
 }
 

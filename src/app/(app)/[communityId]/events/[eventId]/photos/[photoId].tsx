@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Image,
   Modal,
   Pressable,
@@ -20,7 +19,7 @@ import { errorMessage } from '@/components/ui';
 import { colors } from '@/constants/theme';
 import { useSession } from '@/context/SessionContext';
 import * as api from '@/services/apiService';
-import { fetchCreatureById, searchCreatures, type CreatureDetail } from '@/services/supabaseService';
+import { fetchCreatureById, fetchHousingById, fetchLensById, searchCreatures, type CreatureDetail, type Housing, type Lens } from '@/services/supabaseService';
 import type { EventPhoto } from '@/types';
 
 type DiveOption = { o: number; s: string | null };
@@ -37,6 +36,8 @@ export default function PhotoDetailScreen() {
     uploader?: string; cid?: string; dive?: string;
     edit?: string; mine?: string;
     dso?: string; dives?: string; ename?: string;
+    canpush?: string; pushed_enc?: string; pushed_com?: string; species_enc?: string;
+    cam_make?: string; cam_model?: string; housing_id?: string; lens_id?: string;
   }>();
 
   const communityId = Number(params.communityId);
@@ -46,12 +47,19 @@ export default function PhotoDetailScreen() {
 
   const canEdit = params.edit === '1';
   const isMine = params.mine === '1';
+  const canPushInitial = params.canpush === '1';
+  const initPushedEnc = params.pushed_enc === '1';
+  const initPushedCom = params.pushed_com === '1';
 
   const initUrl = params.url;
   const initName = params.name || null;
   const initSci = params.sci || null;
   const initUploader = params.uploader || null;
   const initCreatureId = params.cid ? Number(params.cid) : null;
+  const initCamMake = params.cam_make || null;
+  const initCamModel = params.cam_model || null;
+  const initHousingId = params.housing_id ? Number(params.housing_id) : null;
+  const initLensId = params.lens_id ? Number(params.lens_id) : null;
   const initDiving = params.dive === '1';
   const initDiveSortOrder = params.dso ? Number(params.dso) : null;
   const diveOptions = parseDiveOptions(params.dives);
@@ -72,7 +80,17 @@ export default function PhotoDetailScreen() {
   const [suggestions, setSuggestions] = useState<{ id: number; name: string; scientific_name: string | null }[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [pushedEnc, setPushedEnc] = useState(initPushedEnc);
+  const [pushedCom, setPushedCom] = useState(initPushedCom);
+  const [pushing, setPushing] = useState(false);
   const suggestDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [equipHousing, setEquipHousing] = useState<Housing | null>(null);
+  const [equipLens, setEquipLens] = useState<Lens | null>(null);
+
+  useEffect(() => {
+    if (initHousingId) fetchHousingById(initHousingId).then(setEquipHousing);
+    if (initLensId) fetchLensById(initLensId).then(setEquipLens);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 表示用（保存後に更新される）
   const [displayJaName, setDisplayJaName] = useState<string | null>(initName);
@@ -93,6 +111,8 @@ export default function PhotoDetailScreen() {
           setDisplayJaName(p.japanese_name);
           setDisplaySciName(p.scientific_name);
           setDisplayDiveSortOrder(p.dive_sort_order);
+          setPushedEnc(p.pushed_to_encyclopedia);
+          setPushedCom(p.pushed_to_community);
         }
       } catch (e) {
         if (!cancelled) handleApiError(e);
@@ -178,6 +198,20 @@ export default function PhotoDetailScreen() {
     }
   };
 
+  const doPush = async () => {
+    setPushing(true);
+    try {
+      const updated = await api.pushEventPhoto(communityId, eventId, photoId);
+      setPushedEnc(updated.pushed_to_encyclopedia);
+      setPushedCom(updated.pushed_to_community);
+      setPhoto(updated);
+    } catch (e) {
+      if (!handleApiError(e)) Alert.alert('Pushに失敗しました', e instanceof Error ? e.message : 'エラーが発生しました');
+    } finally {
+      setPushing(false);
+    }
+  };
+
   const confirmDelete = () => {
     Alert.alert('写真を削除', 'この写真を削除しますか？この操作は取り消せません。', [
       { text: 'キャンセル', style: 'cancel' },
@@ -252,6 +286,24 @@ export default function PhotoDetailScreen() {
           {uploaderName ? <Text style={styles.uploader}>by {uploaderName}</Text> : null}
         </View>
 
+        {(initCamMake || initCamModel || equipHousing || equipLens) ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="camera-outline" size={14} color={colors.primary} />
+              <Text style={styles.sectionTitle}>撮影機材</Text>
+            </View>
+            {(initCamMake || initCamModel) ? (
+              <InfoBlock label="カメラ" value={[initCamMake, initCamModel].filter(Boolean).join(' ')} />
+            ) : null}
+            {equipHousing ? (
+              <InfoBlock label="ハウジング" value={[equipHousing.brand, equipHousing.model].filter(Boolean).join(' ')} />
+            ) : null}
+            {equipLens ? (
+              <InfoBlock label="レンズ" value={[equipLens.brand, equipLens.model].filter(Boolean).join(' ')} />
+            ) : null}
+          </View>
+        ) : null}
+
         {(creatureLoading || creature) ? (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -279,6 +331,17 @@ export default function PhotoDetailScreen() {
           </View>
         ) : null}
 
+        {canPushInitial ? (
+          <PushSection
+            isDiving={isDiving}
+            isIdentified={!!(displayJaName || photo?.is_identified)}
+            pushedEnc={pushedEnc}
+            pushedCom={pushedCom}
+            pushing={pushing}
+            onPush={doPush}
+          />
+        ) : null}
+
         {isMine ? (
           <Pressable style={styles.deleteBtn} onPress={confirmDelete}>
             <Ionicons name="trash-outline" size={15} color={colors.danger} />
@@ -290,23 +353,6 @@ export default function PhotoDetailScreen() {
       {/* 同定・編集モーダル */}
       <Modal visible={editVisible} transparent animationType="slide" onRequestClose={() => setEditVisible(false)}>
         <Pressable style={styles.overlay} onPress={() => setEditVisible(false)} />
-
-        {/* 検索サジェスト */}
-        {suggestions.length > 0 ? (
-          <View style={styles.suggestions}>
-            <FlatList
-              data={suggestions}
-              keyExtractor={item => String(item.id)}
-              renderItem={({ item }) => (
-                <Pressable style={styles.suggestionRow} onPress={() => selectSuggestion(item)}>
-                  <Text style={styles.suggestionName}>{item.name}</Text>
-                  {item.scientific_name ? <Text style={styles.suggestionSci}>{item.scientific_name}</Text> : null}
-                </Pressable>
-              )}
-              keyboardShouldPersistTaps="always"
-            />
-          </View>
-        ) : null}
 
         <View style={styles.sheet}>
           <View style={styles.toolbar}>
@@ -334,6 +380,18 @@ export default function PhotoDetailScreen() {
                 placeholderTextColor={colors.textMuted}
                 autoCorrect={false}
               />
+              {suggestions.length > 0 ? (
+                <View style={styles.inlineSugg}>
+                  <ScrollView style={{ maxHeight: 180 }} keyboardShouldPersistTaps="always" bounces={false}>
+                    {suggestions.map(item => (
+                      <Pressable key={String(item.id)} style={styles.suggestionRow} onPress={() => selectSuggestion(item)}>
+                        <Text style={styles.suggestionName}>{item.name}</Text>
+                        {item.scientific_name ? <Text style={styles.suggestionSci}>{item.scientific_name}</Text> : null}
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : null}
             </View>
 
             {/* 学名 */}
@@ -386,6 +444,40 @@ export default function PhotoDetailScreen() {
   );
 }
 
+function PushSection({
+  isDiving, isIdentified, pushedEnc, pushedCom, pushing, onPush,
+}: {
+  isDiving: boolean;
+  isIdentified: boolean;
+  pushedEnc: boolean;
+  pushedCom: boolean;
+  pushing: boolean;
+  onPush: () => void;
+}) {
+  if (!isDiving) return null;
+
+  const alreadyPushed = isIdentified ? pushedEnc : pushedCom;
+  const destination = isIdentified ? 'コミュニティ図鑑' : '未同定一覧';
+
+  return (
+    <View style={styles.pushSection}>
+      {alreadyPushed ? (
+        <View style={styles.pushedRow}>
+          <Ionicons name="checkmark-circle" size={15} color={colors.primary} />
+          <Text style={styles.pushedText}>{destination}にPush済み</Text>
+        </View>
+      ) : (
+        <Pressable style={[styles.pushBtn, pushing && styles.pushBtnDisabled]} onPress={onPush} disabled={pushing}>
+          {pushing
+            ? <ActivityIndicator size="small" color={colors.primary} />
+            : <Ionicons name="arrow-up-circle-outline" size={16} color={colors.primary} />}
+          <Text style={styles.pushBtnText}>{pushing ? 'Push中...' : `${destination}にPush`}</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
 function InfoBlock({ label, value, multiline }: { label: string; value: string; multiline?: boolean }) {
   return (
     <View style={styles.infoBlock}>
@@ -435,6 +527,33 @@ const styles = StyleSheet.create({
   statCell: { flex: 1, gap: 4 },
   statValue: { fontSize: 14, color: colors.text, fontWeight: '500' },
 
+  pushSection: { marginHorizontal: 16 },
+  pushedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    backgroundColor: colors.primaryBg,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  pushedText: { fontSize: 14, color: colors.primary, fontWeight: '600' },
+  pushBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryBg,
+  },
+  pushBtnDisabled: { opacity: 0.6 },
+  pushBtnText: { fontSize: 14, color: colors.primary, fontWeight: '600' },
+
   deleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -450,11 +569,9 @@ const styles = StyleSheet.create({
 
   // 同定モーダル
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)' },
-  suggestions: {
-    maxHeight: 200,
-    backgroundColor: colors.card,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+  inlineSugg: {
+    borderRadius: 10, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.card, overflow: 'hidden', marginTop: 6,
   },
   suggestionRow: {
     paddingHorizontal: 16,
