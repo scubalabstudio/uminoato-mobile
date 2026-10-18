@@ -5,7 +5,6 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'r
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppLogo } from '@/components/AppLogo';
-import { CommunityInvitationList } from '@/components/CommunityInvitationList';
 import { EventInvitationBell } from '@/components/EventInvitationBell';
 import { EventRow } from '@/components/EventRow';
 import { SettingsButton } from '@/components/SettingsButton';
@@ -71,8 +70,6 @@ export function GuestHome() {
                 <Ionicons name="swap-horizontal" size={18} color={colors.primary} />
               </Pressable>
             ) : null}
-
-            <CommunityInvitationList />
 
             {/* 招待しか届いていないと一覧が空になるので、ベルへ案内する */}
             {guestEvents.length > 0 && joined.length === 0 && closed.length === 0 ? (

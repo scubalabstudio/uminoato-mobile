@@ -3,23 +3,31 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 
 import { EventInvitationCard } from '@/components/EventInvitationCard';
+import { InvitationRow } from '@/components/InvitationRow';
 import { colors } from '@/constants/theme';
 import { useCommunity } from '@/context/CommunityContext';
-import type { MyInvitedEvent } from '@/types';
+import type { MyInvitedEvent, MyInvitation } from '@/types';
 
-// 届いているイベント招待のベル。押すと一覧のシートを開き、その場で参加・辞退できる。
-// どの招待を出すかは呼び出し側が決める（コミュニティのイベントタブ＝そのコミュニティの招待、ゲスト＝ゲスト参加の招待）
+// イベント招待・コミュニティ招待をまとめて管理するベルアイコン
 export function EventInvitationBell({ events }: { events: MyInvitedEvent[] }) {
-  const { respondEventInvitation } = useCommunity();
+  const { respondEventInvitation, invitations, respondInvitation } = useCommunity();
   const [open, setOpen] = useState(false);
-  const [busyId, setBusyId] = useState<number | null>(null);
+  const [busyEventId, setBusyEventId] = useState<number | null>(null);
+  const [busyInvId, setBusyInvId] = useState<number | null>(null);
 
-  const invited = events.filter((ev) => ev.member_status === 'invited');
+  const invitedEvents = events.filter((ev) => ev.member_status === 'invited');
+  const totalCount = invitedEvents.length + invitations.length;
 
-  const respond = async (ev: MyInvitedEvent, accept: boolean) => {
-    setBusyId(ev.id);
+  const respondEvent = async (ev: MyInvitedEvent, accept: boolean) => {
+    setBusyEventId(ev.id);
     await respondEventInvitation(ev, accept);
-    setBusyId(null);
+    setBusyEventId(null);
+  };
+
+  const respondCommunity = async (inv: MyInvitation, accept: boolean) => {
+    setBusyInvId(inv.id);
+    await respondInvitation(inv, accept);
+    setBusyInvId(null);
   };
 
   return (
@@ -27,13 +35,13 @@ export function EventInvitationBell({ events }: { events: MyInvitedEvent[] }) {
       <Pressable
         onPress={() => setOpen(true)}
         accessibilityRole="button"
-        accessibilityLabel={`イベントの招待が${invited.length}件あります`}
+        accessibilityLabel={totalCount > 0 ? `招待が${totalCount}件あります` : '通知'}
         style={({ pressed }) => [styles.bell, pressed && { opacity: 0.6 }]}
       >
         <Ionicons name="notifications-outline" size={22} color={colors.text} />
-        {invited.length > 0 && (
+        {totalCount > 0 && (
           <View style={styles.badge}>
-            <Text style={styles.badgeText}>{invited.length}</Text>
+            <Text style={styles.badgeText}>{totalCount}</Text>
           </View>
         )}
       </Pressable>
@@ -48,24 +56,43 @@ export function EventInvitationBell({ events }: { events: MyInvitedEvent[] }) {
         <View style={styles.sheet}>
           <View style={styles.handle} />
           <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>イベントの招待</Text>
+            <Text style={styles.sheetTitle}>招待</Text>
             <Pressable onPress={() => setOpen(false)} hitSlop={8}>
               <Ionicons name="close" size={20} color={colors.textSub} />
             </Pressable>
           </View>
-          {invited.length === 0 ? (
+          {totalCount === 0 ? (
             <Text style={styles.empty}>招待はありません</Text>
           ) : (
             <ScrollView contentContainerStyle={styles.list} bounces={false}>
-              {invited.map((ev) => (
-                <EventInvitationCard
-                  key={ev.id}
-                  event={ev}
-                  busy={busyId === ev.id}
-                  onAccept={() => respond(ev, true)}
-                  onDecline={() => respond(ev, false)}
-                />
-              ))}
+              {invitations.length > 0 ? (
+                <>
+                  <Text style={styles.sectionLabel}>コミュニティの招待</Text>
+                  {invitations.map((inv) => (
+                    <InvitationRow
+                      key={inv.id}
+                      text={`${inv.invited_by_name ?? '管理者'}さんから「${inv.community_name}」への招待`}
+                      busy={busyInvId === inv.id}
+                      onAccept={() => respondCommunity(inv, true)}
+                      onDecline={() => respondCommunity(inv, false)}
+                    />
+                  ))}
+                </>
+              ) : null}
+              {invitedEvents.length > 0 ? (
+                <>
+                  <Text style={styles.sectionLabel}>イベントの招待</Text>
+                  {invitedEvents.map((ev) => (
+                    <EventInvitationCard
+                      key={ev.id}
+                      event={ev}
+                      busy={busyEventId === ev.id}
+                      onAccept={() => respondEvent(ev, true)}
+                      onDecline={() => respondEvent(ev, false)}
+                    />
+                  ))}
+                </>
+              ) : null}
             </ScrollView>
           )}
         </View>
@@ -133,6 +160,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: colors.text,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSub,
+    marginTop: 4,
+    marginBottom: 4,
   },
   list: {
     padding: 16,

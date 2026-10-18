@@ -36,7 +36,7 @@ export default function TabsLayout() {
         headerTitle: () => <AppLogo />,
         headerShadowVisible: false,
         headerStyle: { backgroundColor: colors.bg },
-        headerRight: () => <SettingsButton />,
+        headerRight: () => <EventInvitationBell events={eventsHere} />,
         sceneStyle: { backgroundColor: colors.bg },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textSub,
@@ -60,7 +60,6 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'calendar' : 'calendar-outline'} size={24} color={color} />
           ),
-          headerRight: () => <EventInvitationBell events={eventsHere} />,
         }}
       />
       <Tabs.Screen
@@ -87,6 +86,7 @@ export default function TabsLayout() {
         name="community"
         options={{
           title: 'コミュニティ',
+          headerRight: () => <SettingsButton />,
           // コミュニティへの招待、またはゲスト参加のイベントの招待があれば赤い点（切り替えシートで応答する）
           tabBarBadge:
             invitations.length > 0 || guestEvents.some((ev) => ev.member_status === 'invited') ? '' : undefined,

@@ -4,7 +4,6 @@ import { useState, type ComponentProps } from 'react';
 import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar } from '@/components/Avatar';
-import { CommunityInvitationList } from '@/components/CommunityInvitationList';
 import { RoleBadge } from '@/components/RoleBadge';
 import { Button } from '@/components/ui';
 import { WEB_URL } from '@/config/api';
@@ -103,7 +102,6 @@ export default function CommunityTab() {
       )}
       <Text style={styles.hint}>下のコミュニティアイコンを長押ししても切り替えられます</Text>
 
-      <CommunityInvitationList />
     </ScrollView>
   );
 }
