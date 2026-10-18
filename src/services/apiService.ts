@@ -370,6 +370,18 @@ export async function updateEvent(
   return res.event;
 }
 
+export async function updateEventVisibility(
+  communityId: number,
+  eventId: number,
+  externalPublic: boolean,
+): Promise<CommunityEvent> {
+  const res = await request<{ event: CommunityEvent }>(
+    `communities/${communityId}/events/${eventId}/visibility`,
+    { method: 'PATCH', body: JSON.stringify({ external_public: externalPublic }) },
+  );
+  return res.event;
+}
+
 export async function updateEventDiveInfo(
   communityId: number,
   eventId: number,
@@ -448,6 +460,18 @@ export async function deleteEventPhoto(
   );
 }
 
+export async function pushEventPhoto(
+  communityId: number,
+  eventId: number,
+  photoId: number,
+): Promise<EventPhoto> {
+  const res = await request<{ photo: EventPhoto }>(
+    `communities/${communityId}/events/${eventId}/photos/${photoId}/push`,
+    { method: 'POST' },
+  );
+  return res.photo;
+}
+
 // 主催者のみ・開催中のみ。Web版の「レポートの準備をする」。取り消せず、以後は写真の追加・編集ができなくなる
 export async function closeEvent(communityId: number, eventId: number): Promise<CommunityEvent> {
   const res = await request<{ event: CommunityEvent }>(
@@ -490,6 +514,41 @@ export async function searchEventUsers(
   return res.users;
 }
 
+// ── 公開図鑑（認証不要） ────────────────────────────────────────────────────
+
+async function publicRequest<T>(path: string): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${BACKEND_URL}/api/${path}`, {
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    });
+  } catch {
+    throw new ApiError(0, '通信エラーが発生しました。電波の良い場所で再度お試しください。');
+  }
+  const body = res.status === 204 ? null : await res.json().catch(() => null);
+  if (!res.ok) throw new ApiError(res.status, errorMessage(body, res.status));
+  return body as T;
+}
+
+export async function fetchPublicEncyclopedia(
+  communityId: number,
+  params: { page?: number; q?: string; sort?: EncyclopediaSort } = {},
+): Promise<{ entries: EncyclopediaEntry[]; tags: Tag[]; meta: PageMeta }> {
+  const query = [`page=${params.page ?? 1}`, `sort=${params.sort ?? 'name_asc'}`];
+  if (params.q) query.push(`q=${encodeURIComponent(params.q)}`);
+  return publicRequest(`public/communities/${communityId}/encyclopedia?${query.join('&')}`);
+}
+
+export async function fetchPublicEncyclopediaEntry(
+  communityId: number,
+  entryId: number,
+): Promise<EncyclopediaEntryDetail> {
+  const res = await publicRequest<{ entry: EncyclopediaEntryDetail }>(
+    `public/communities/${communityId}/encyclopedia/${entryId}`,
+  );
+  return res.entry;
+}
+
 // ── 図鑑 ───────────────────────────────────────────────────────────────────
 
 // 1ページ24件。tags はそのコミュニティのエントリに使われている全タグ（絞り込みに関わらない）
@@ -506,6 +565,105 @@ export async function fetchEncyclopedia(
 export async function fetchEncyclopediaEntry(communityId: number, entryId: number): Promise<EncyclopediaEntryDetail> {
   const res = await request<{ entry: EncyclopediaEntryDetail }>(`communities/${communityId}/encyclopedia/${entryId}`);
   return res.entry;
+}
+
+// 管理者・図鑑編集者のみ。和名・学名・写真1枚で新エントリを作成する
+export async function createEncyclopediaEntry(
+  communityId: number,
+  params: {
+    japaneseName: string;
+    scientificName: string;
+    creatureId?: number | null;
+    pointName?: string;
+    pointId?: number | null;
+    cameraMake?: string;
+    cameraModel?: string;
+    housingId?: number | null;
+    lensId?: number | null;
+    fileUri: string;
+    mimeType?: string;
+    ext?: string;
+  },
+): Promise<EncyclopediaEntryDetail> {
+  const { japaneseName, scientificName, creatureId, pointName, pointId, cameraMake, cameraModel, housingId, lensId, fileUri, mimeType = 'image/jpeg', ext = 'jpg' } = params;
+  const form = new FormData();
+  form.append('image', { uri: fileUri, name: `photo.${ext}`, type: mimeType } as unknown as Blob);
+  form.append('japanese_name', japaneseName);
+  form.append('scientific_name', scientificName);
+  if (creatureId != null) form.append('creature_id', String(creatureId));
+  if (pointName) form.append('point_name', pointName);
+  if (pointId != null) form.append('point_id', String(pointId));
+  if (cameraMake) form.append('camera_make', cameraMake);
+  if (cameraModel) form.append('camera_model', cameraModel);
+  if (housingId != null) form.append('housing_id', String(housingId));
+  if (lensId != null) form.append('lens_id', String(lensId));
+  const res = await uploadForm<{ entry: EncyclopediaEntryDetail }>(
+    `communities/${communityId}/encyclopedia`,
+    form,
+  );
+  return res.entry;
+}
+
+// 管理者・図鑑編集者のみ。既存エントリに写真を追加する（5枚超えると古い順に入れ替わる）
+export async function addEncyclopediaPhoto(
+  communityId: number,
+  entryId: number,
+  params: {
+    fileUri: string;
+    mimeType?: string;
+    ext?: string;
+    cameraMake?: string;
+    cameraModel?: string;
+    housingId?: number | null;
+    lensId?: number | null;
+    pointName?: string;
+    pointId?: number | null;
+  },
+): Promise<EncyclopediaEntryDetail> {
+  const { fileUri, mimeType = 'image/jpeg', ext = 'jpg', cameraMake, cameraModel, housingId, lensId, pointName, pointId } = params;
+  const form = new FormData();
+  form.append('image', { uri: fileUri, name: `photo.${ext}`, type: mimeType } as unknown as Blob);
+  if (cameraMake) form.append('camera_make', cameraMake);
+  if (cameraModel) form.append('camera_model', cameraModel);
+  if (housingId != null) form.append('housing_id', String(housingId));
+  if (lensId != null) form.append('lens_id', String(lensId));
+  if (pointName) form.append('point_name', pointName);
+  if (pointId != null) form.append('point_id', String(pointId));
+  const res = await uploadForm<{ entry: EncyclopediaEntryDetail }>(
+    `communities/${communityId}/encyclopedia/${entryId}/photos`,
+    form,
+  );
+  return res.entry;
+}
+
+// コミュニティメンバー誰でも。写真を直接未同定一覧にアップロードする
+export async function uploadUnidentifiedPhoto(
+  communityId: number,
+  fileUri: string,
+  mimeType = 'image/jpeg',
+  ext = 'jpg',
+  equipment: {
+    cameraMake?: string;
+    cameraModel?: string;
+    housingId?: number | null;
+    lensId?: number | null;
+    pointName?: string;
+    pointId?: number | null;
+  } = {},
+): Promise<UnidentifiedPhoto> {
+  const form = new FormData();
+  form.append('image', { uri: fileUri, name: `photo.${ext}`, type: mimeType } as unknown as Blob);
+  if (equipment.cameraMake) form.append('camera_make', equipment.cameraMake);
+  if (equipment.cameraModel) form.append('camera_model', equipment.cameraModel);
+  if (equipment.housingId != null) form.append('housing_id', String(equipment.housingId));
+  if (equipment.lensId != null) form.append('lens_id', String(equipment.lensId));
+  if (equipment.pointName) form.append('point_name', equipment.pointName);
+  if (equipment.pointId != null) form.append('point_id', String(equipment.pointId));
+  const res = await uploadForm<{ photo: UnidentifiedPhoto }>(
+    `communities/${communityId}/unidentified-photos`,
+    form,
+  );
+  return res.photo;
 }
 
 // 管理者・図鑑編集者のみ。最後の1枚を消すとエントリごと消える（entry_deleted = true）
@@ -544,6 +702,54 @@ export async function fetchUnidentifiedPhotos(
   page = 1,
 ): Promise<{ photos: UnidentifiedPhoto[]; meta: PageMeta }> {
   return request(`communities/${communityId}/unidentified-photos?page=${page}`);
+}
+
+export type ReportPlatform = 'instagram' | 'twitter' | 'line' | 'facebook';
+
+export async function generateEventReport(
+  communityId: number,
+  eventId: number,
+  params: {
+    platform: ReportPlatform;
+    feeling?: string;
+    char_count?: number;
+    focus?: string;
+    emoji?: boolean;
+    include_thanks?: boolean;
+  },
+): Promise<{ text: string }> {
+  return request(`communities/${communityId}/events/${eventId}/report`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+export async function saveEventReport(
+  communityId: number,
+  eventId: number,
+  platform: ReportPlatform,
+  text: string,
+): Promise<void> {
+  await request(`communities/${communityId}/events/${eventId}/report`, {
+    method: 'PUT',
+    body: JSON.stringify({ platform, text }),
+  });
+}
+
+export async function markEventReported(communityId: number, eventId: number): Promise<void> {
+  await request(`communities/${communityId}/events/${eventId}/reported`, { method: 'POST' });
+}
+
+export async function unmarkEventReported(communityId: number, eventId: number): Promise<void> {
+  await request(`communities/${communityId}/events/${eventId}/reported`, { method: 'DELETE' });
+}
+
+export async function registerPushToken(token: string): Promise<void> {
+  await request('push-tokens', { method: 'POST', body: JSON.stringify({ token }) });
+}
+
+export async function unregisterPushToken(token: string): Promise<void> {
+  await request('push-tokens', { method: 'DELETE', body: JSON.stringify({ token }) });
 }
 
 // 管理者・図鑑編集者のみ。同定すると未同定一覧から外れる（図鑑には載らない）

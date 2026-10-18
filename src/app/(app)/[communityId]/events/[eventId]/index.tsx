@@ -27,11 +27,18 @@ import * as api from '@/services/apiService';
 import {
   type Camera, type Housing, type Lens,
   fetchHousingsForCamera, fetchLensesForCameraHousing,
-  searchCameras, searchCreatures,
+  matchCameraByExif, searchCameras, searchCreatures,
 } from '@/services/supabaseService';
 import { addToHistory } from '@/services/browsingHistoryService';
+import {
+  equipmentSetLabel,
+  loadMyEquipment,
+  type MyEquipmentSet,
+} from '@/services/myEquipmentService';
+import { ReportTab } from './ReportTab';
 import type { CommunityEventDetail, Dive, EventMember, EventPhoto } from '@/types';
 import { formatDateRange } from '@/utils/date';
+import { parseExifCamera } from '@/utils/exif';
 
 export default function EventDetailScreen() {
   const params = useLocalSearchParams<{ communityId: string; eventId: string; name?: string }>();
@@ -44,10 +51,11 @@ export default function EventDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [responding, setResponding] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [pendingUpload, setPendingUpload] = useState<{ uri: string; mimeType: string; ext: string } | null>(null);
+  const [pendingUpload, setPendingUpload] = useState<{ uri: string; mimeType: string; ext: string; exifMake: string | null; exifModel: string | null } | null>(null);
   const [managing, setManaging] = useState<'close' | 'delete' | null>(null);
   const [removingId, setRemovingId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'photos' | 'dive' | 'members'>('photos');
+  const [pushingId, setPushingId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<'photos' | 'dive' | 'members' | 'report'>('photos');
   const { width: screenWidth } = useWindowDimensions();
 
   const load = useCallback(async () => {
@@ -95,12 +103,14 @@ export default function EventDetailScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'] as ImagePicker.MediaType[],
       quality: 0.85,
+      exif: true,
     });
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
     const mimeType = asset.mimeType ?? 'image/jpeg';
     const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') ?? 'jpg';
-    setPendingUpload({ uri: asset.uri, mimeType, ext });
+    const { make: exifMake, model: exifModel } = parseExifCamera(asset.exif);
+    setPendingUpload({ uri: asset.uri, mimeType, ext, exifMake, exifModel });
   };
 
   const doUpload = async (params: UploadSubmitParams) => {
@@ -169,6 +179,25 @@ export default function EventDetailScreen() {
         },
       ],
     );
+  };
+
+  const pushPhoto = async (photoId: number) => {
+    if (!event) return;
+    setPushingId(photoId);
+    try {
+      const updated = await api.pushEventPhoto(communityId, eventId, photoId);
+      setEvent(prev => prev ? {
+        ...prev,
+        photos: prev.photos.map(p => p.id === photoId ? updated : p),
+        unidentified_count: updated.pushed_to_community && !updated.is_identified
+          ? Math.max(0, (prev.unidentified_count ?? 0) - 1)
+          : (prev.unidentified_count ?? 0),
+      } : prev);
+    } catch (e) {
+      if (!handleApiError(e)) Alert.alert('Pushに失敗しました', errorMessage(e));
+    } finally {
+      setPushingId(null);
+    }
   };
 
   const deleteEvent = () => {
@@ -357,6 +386,11 @@ export default function EventDetailScreen() {
           <Text style={[styles.tabText, activeTab === 'members' && styles.tabTextActive]}>メンバー</Text>
           <Text style={[styles.tabCount, activeTab === 'members' && styles.tabCountActive]}>{accepted.length + 1}</Text>
         </Pressable>
+        {!isOpen && isOrganizer ? (
+          <Pressable style={[styles.tab, activeTab === 'report' && styles.tabActive]} onPress={() => setActiveTab('report')}>
+            <Text style={[styles.tabText, activeTab === 'report' && styles.tabTextActive]}>レポート</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {/* ── タブコンテンツ ── */}
@@ -384,6 +418,10 @@ export default function EventDetailScreen() {
             eventName={event.name}
             canEdit={canEdit}
             dives={dives}
+            isOpen={isOpen}
+            isOrganizer={isOrganizer}
+            pushingId={pushingId}
+            onPush={pushPhoto}
           />
         </View>
       ) : activeTab === 'dive' ? (
@@ -422,11 +460,11 @@ export default function EventDetailScreen() {
             <Text style={styles.diveEmpty}>ダイブ情報がまだ入力されていません</Text>
           )}
         </View>
-      ) : (
+      ) : activeTab === 'members' ? (
         <View style={styles.tabContent}>
           {isOrganizer ? (
             <View style={styles.tabActionRow}>
-              <Pressable hitSlop={12} onPress={() => router.push(`/${communityId}/events/${eventId}/invite`)}>
+              <Pressable hitSlop={12} onPress={() => router.push(`/${communityId}/events/${eventId}/invite?pub=${event.external_public ? 1 : 0}&organizer=${isOrganizer ? 1 : 0}`)}>
                 <Ionicons name="person-add-outline" size={20} color={colors.primary} />
               </Pressable>
             </View>
@@ -466,12 +504,20 @@ export default function EventDetailScreen() {
             </View>
           ) : null}
         </View>
-      )}
+      ) : activeTab === 'report' ? (
+        <ReportTab
+          event={event}
+          communityId={communityId}
+          onEventUpdated={setEvent}
+        />
+      ) : null}
     </ScrollView>
 
     {pendingUpload ? (
       <UploadModal
         uri={pendingUpload.uri}
+        exifMake={pendingUpload.exifMake}
+        exifModel={pendingUpload.exifModel}
         dives={dives}
         onSubmit={doUpload}
         onCancel={() => setPendingUpload(null)}
@@ -498,9 +544,11 @@ interface UploadSubmitParams {
 // ── UploadModal ────────────────────────────────────────────────────────────
 
 function UploadModal({
-  uri, dives, onSubmit, onCancel,
+  uri, exifMake, exifModel, dives, onSubmit, onCancel,
 }: {
   uri: string;
+  exifMake: string | null;
+  exifModel: string | null;
   dives: Dive[];
   onSubmit: (p: UploadSubmitParams) => void;
   onCancel: () => void;
@@ -528,6 +576,33 @@ function UploadModal({
 
   const creatureDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [myEquipment, setMyEquipment] = useState<MyEquipmentSet[]>([]);
+
+  useEffect(() => {
+    loadMyEquipment().then(setMyEquipment);
+  }, []);
+
+  const applyMyEquipment = (set: MyEquipmentSet) => {
+    setSelectedCamera(set.camera);
+    setCameraQuery(set.camera.display_name ?? `${set.camera.brand ?? ''} ${set.camera.model}`.trim());
+    setCameraSuggestions([]); setActiveSearch(null);
+    setSelectedHousing(set.housing);
+    setSelectedLens(set.lens);
+  };
+
+  // EXIFが渡された場合、モデル名でファジーマッチして自動選択する
+  useEffect(() => {
+    if (!exifMake && !exifModel) return;
+    matchCameraByExif(exifMake ?? null, exifModel ?? null).then((cam) => {
+      if (cam) {
+        setSelectedCamera(cam);
+        setCameraQuery(cam.display_name ?? `${cam.brand ?? ''} ${cam.model}`.trim());
+      } else {
+        setCameraQuery([exifMake, exifModel].filter(Boolean).join(' '));
+      }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setHousings([]); setSelectedHousing(null); setLenses([]); setSelectedLens(null);
@@ -611,24 +686,7 @@ function UploadModal({
           </Pressable>
         </View>
 
-        {activeSearch === 'creature' && creatureSuggestions.length > 0 ? (
-          <View style={ulStyles.suggestions}>
-            {creatureSuggestions.map(item => (
-              <Pressable key={String(item.id)} style={ulStyles.suggRow} onPress={() => selectCreature(item)}>
-                <Text style={ulStyles.suggName}>{item.name}</Text>
-                {item.scientific_name ? <Text style={ulStyles.suggSci}>{item.scientific_name}</Text> : null}
-              </Pressable>
-            ))}
-          </View>
-        ) : activeSearch === 'camera' && cameraSuggestions.length > 0 ? (
-          <View style={ulStyles.suggestions}>
-            {cameraSuggestions.map(cam => (
-              <Pressable key={String(cam.id)} style={ulStyles.suggRow} onPress={() => selectCamera(cam)}>
-                <Text style={ulStyles.suggName}>{cameraLabel(cam)}</Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
+
 
         <ScrollView contentContainerStyle={ulStyles.body} keyboardShouldPersistTaps="handled">
           <Image source={{ uri }} style={[ulStyles.preview, { height: previewH }]} resizeMode="cover" />
@@ -678,10 +736,23 @@ function UploadModal({
                   style={ulStyles.input}
                   value={jaName}
                   onChangeText={onJaChange}
+                  onBlur={() => setTimeout(() => setActiveSearch(prev => prev === 'creature' ? null : prev), 200)}
                   placeholder="例: アカククリ"
                   placeholderTextColor={colors.textMuted}
                   autoCorrect={false}
                 />
+                {activeSearch === 'creature' && creatureSuggestions.length > 0 ? (
+                  <View style={[ulStyles.inlineSugg, { marginTop: 6 }]}>
+                    <ScrollView style={{ maxHeight: 200 }} keyboardShouldPersistTaps="always" bounces={false} nestedScrollEnabled>
+                      {creatureSuggestions.map(item => (
+                        <Pressable key={String(item.id)} style={ulStyles.suggRow} onPress={() => selectCreature(item)}>
+                          <Text style={ulStyles.suggName}>{item.name}</Text>
+                          {item.scientific_name ? <Text style={ulStyles.suggSci}>{item.scientific_name}</Text> : null}
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  </View>
+                ) : null}
               </View>
               <View style={ulStyles.field}>
                 <Text style={ulStyles.label}>学名（任意）</Text>
@@ -710,52 +781,104 @@ function UploadModal({
                 </Pressable>
               </View>
             ) : (
-              <TextInput
-                style={ulStyles.input}
-                value={cameraQuery}
-                onChangeText={onCameraChange}
-                placeholder="例: TG-6, OM-5"
-                placeholderTextColor={colors.textMuted}
-                autoCorrect={false}
-              />
+              <>
+                <TextInput
+                  style={ulStyles.input}
+                  value={cameraQuery}
+                  onChangeText={onCameraChange}
+                  onBlur={() => setTimeout(() => setActiveSearch(prev => prev === 'camera' ? null : prev), 200)}
+                  placeholder="例: TG-6, OM-5"
+                  placeholderTextColor={colors.textMuted}
+                  autoCorrect={false}
+                />
+                {activeSearch === 'camera' && cameraSuggestions.length > 0 ? (
+                  <View style={[ulStyles.inlineSugg, { marginTop: 6 }]}>
+                    <ScrollView style={{ maxHeight: 200 }} keyboardShouldPersistTaps="always" bounces={false} nestedScrollEnabled>
+                      {cameraSuggestions.map(cam => (
+                        <Pressable key={String(cam.id)} style={ulStyles.suggRow} onPress={() => selectCamera(cam)}>
+                          <Text style={ulStyles.suggName}>{cameraLabel(cam)}</Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  </View>
+                ) : null}
+              </>
             )}
           </View>
+
+          {/* マイ機材クイック選択（カメラ確定後、一致するセットのみ） */}
+          {(() => {
+            if (!selectedCamera) return null;
+            const matched = myEquipment.filter((s) => s.camera.id === selectedCamera.id);
+            if (matched.length === 0) return null;
+            return (
+              <View style={ulStyles.field}>
+                <Text style={ulStyles.myEquipLabel}>マイ機材から選ぶ</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ulStyles.myEquipChips}>
+                  {matched.map((set) => {
+                    const active = selectedHousing?.id === set.housing?.id && selectedLens?.id === set.lens?.id;
+                    return (
+                      <Pressable
+                        key={set.id}
+                        style={[ulStyles.myEquipChip, active && ulStyles.myEquipChipOn]}
+                        onPress={() => applyMyEquipment(set)}
+                      >
+                        <Text style={[ulStyles.myEquipChipText, active && ulStyles.myEquipChipTextOn]} numberOfLines={1}>
+                          {equipmentSetLabel(set)}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            );
+          })()}
 
           {selectedCamera && housings.length > 0 ? (
             <View style={ulStyles.field}>
               <Text style={ulStyles.label}>ハウジング（任意）</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ulStyles.chipsRow}>
-                {housings.map(h => (
-                  <Pressable
-                    key={h.id}
-                    style={[ulStyles.chip, selectedHousing?.id === h.id && ulStyles.chipOn]}
-                    onPress={() => setSelectedHousing(selectedHousing?.id === h.id ? null : h)}
-                  >
-                    <Text style={[ulStyles.chipTxt, selectedHousing?.id === h.id && ulStyles.chipTxtOn]}>
-                      {housingLabel(h)}
-                    </Text>
+              {selectedHousing ? (
+                <View style={ulStyles.selectedRow}>
+                  <Text style={ulStyles.selectedTxt} numberOfLines={1}>{housingLabel(selectedHousing)}</Text>
+                  <Pressable onPress={() => setSelectedHousing(null)} hitSlop={8}>
+                    <Ionicons name="close-circle" size={17} color={colors.textMuted} />
                   </Pressable>
-                ))}
-              </ScrollView>
+                </View>
+              ) : (
+                <View style={ulStyles.inlineSugg}>
+                  <ScrollView style={{ maxHeight: 200 }} keyboardShouldPersistTaps="handled" bounces={false} nestedScrollEnabled>
+                    {housings.map(h => (
+                      <Pressable key={h.id} style={ulStyles.suggRow} onPress={() => setSelectedHousing(h)}>
+                        <Text style={ulStyles.suggName}>{housingLabel(h)}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
             </View>
           ) : null}
 
           {selectedCamera && selectedHousing && lenses.length > 0 ? (
             <View style={ulStyles.field}>
               <Text style={ulStyles.label}>レンズ（任意）</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ulStyles.chipsRow}>
-                {lenses.map(l => (
-                  <Pressable
-                    key={l.id}
-                    style={[ulStyles.chip, selectedLens?.id === l.id && ulStyles.chipOn]}
-                    onPress={() => setSelectedLens(selectedLens?.id === l.id ? null : l)}
-                  >
-                    <Text style={[ulStyles.chipTxt, selectedLens?.id === l.id && ulStyles.chipTxtOn]}>
-                      {lensLabel(l)}
-                    </Text>
+              {selectedLens ? (
+                <View style={ulStyles.selectedRow}>
+                  <Text style={ulStyles.selectedTxt} numberOfLines={1}>{lensLabel(selectedLens)}</Text>
+                  <Pressable onPress={() => setSelectedLens(null)} hitSlop={8}>
+                    <Ionicons name="close-circle" size={17} color={colors.textMuted} />
                   </Pressable>
-                ))}
-              </ScrollView>
+                </View>
+              ) : (
+                <View style={ulStyles.inlineSugg}>
+                  <ScrollView style={{ maxHeight: 200 }} keyboardShouldPersistTaps="handled" bounces={false} nestedScrollEnabled>
+                    {lenses.map(l => (
+                      <Pressable key={l.id} style={ulStyles.suggRow} onPress={() => setSelectedLens(l)}>
+                        <Text style={ulStyles.suggName}>{lensLabel(l)}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
             </View>
           ) : null}
 
@@ -899,7 +1022,7 @@ function DiveRow({ dive }: { dive: Dive }) {
 }
 
 function PhotoGrid({
-  photos, tileSize, communityId, eventId, eventName, canEdit, dives,
+  photos, tileSize, communityId, eventId, eventName, canEdit, dives, isOpen, isOrganizer, pushingId, onPush,
 }: {
   photos: EventPhoto[];
   tileSize: number;
@@ -908,6 +1031,10 @@ function PhotoGrid({
   eventName: string;
   canEdit: boolean;
   dives: Dive[];
+  isOpen: boolean;
+  isOrganizer: boolean;
+  pushingId: number | null;
+  onPush: (photoId: number) => void;
 }) {
   if (photos.length === 0) {
     return (
@@ -919,45 +1046,95 @@ function PhotoGrid({
   }
   return (
     <View style={styles.photoGrid}>
-      {photos.map((photo) => (
-        <Pressable
-          key={photo.id}
-          onPress={() => {
-            const diveOpts = dives.map(d => ({ o: d.sort_order, s: d.dive_site ?? null }));
-            const qs = [
-              `url=${encodeURIComponent(photo.display_url)}`,
-              `name=${encodeURIComponent(photo.japanese_name ?? '')}`,
-              `sci=${encodeURIComponent(photo.scientific_name ?? '')}`,
-              `uploader=${encodeURIComponent(photo.uploader_name ?? '')}`,
-              `cid=${photo.creature_id ?? ''}`,
-              `dive=${photo.is_diving_photo ? 1 : 0}`,
-              `edit=${canEdit ? 1 : 0}`,
-              `mine=${photo.is_mine ? 1 : 0}`,
-              `dso=${photo.dive_sort_order ?? ''}`,
-              `dives=${encodeURIComponent(JSON.stringify(diveOpts))}`,
-              `ename=${encodeURIComponent(eventName)}`,
-            ].join('&');
-            router.push(`/${communityId}/events/${eventId}/photos/${photo.id}?${qs}`);
-          }}
-          style={({ pressed }) => [{ width: tileSize, opacity: pressed ? 0.8 : 1 }]}
-        >
-          <Image
-            source={{ uri: photo.thumbnail_url }}
-            style={{ width: tileSize, height: tileSize, borderRadius: 8 }}
-            resizeMode="cover"
-          />
-          {photo.is_diving_photo ? (
-            <View style={styles.photoLabel}>
-              <Text style={styles.photoName} numberOfLines={1}>
-                {photo.japanese_name ?? <Text style={styles.photoNameMissing}>和名未入力</Text>}
-              </Text>
-              {photo.scientific_name ? (
-                <Text style={styles.photoSci} numberOfLines={1}>{photo.scientific_name}</Text>
-              ) : null}
-            </View>
-          ) : null}
-        </Pressable>
-      ))}
+      {photos.map((photo) => {
+        const isPushing = pushingId === photo.id;
+        const showStrip = isOrganizer && !isOpen && photo.is_diving_photo;
+
+        // Push先ラベルと状態
+        let stripLabel = '';
+        let stripDone = false;
+        if (photo.pushed_to_encyclopedia) {
+          stripLabel = '図鑑Push済み'; stripDone = true;
+        } else if (photo.pushed_to_community) {
+          stripLabel = '未同定Push済み'; stripDone = true;
+        } else if (photo.is_identified) {
+          stripLabel = '図鑑へPush';
+        } else {
+          stripLabel = '未同定へPush';
+        }
+
+        return (
+          <View key={photo.id} style={{ width: tileSize }}>
+            <Pressable
+              onPress={() => {
+                const diveOpts = dives.map(d => ({ o: d.sort_order, s: d.dive_site ?? null }));
+                const canpush = (!isOpen && isOrganizer) ? 1 : 0;
+                const qs = [
+                  `url=${encodeURIComponent(photo.display_url)}`,
+                  `name=${encodeURIComponent(photo.japanese_name ?? '')}`,
+                  `sci=${encodeURIComponent(photo.scientific_name ?? '')}`,
+                  `uploader=${encodeURIComponent(photo.uploader_name ?? '')}`,
+                  `cid=${photo.creature_id ?? ''}`,
+                  `dive=${photo.is_diving_photo ? 1 : 0}`,
+                  `edit=${canEdit ? 1 : 0}`,
+                  `mine=${photo.is_mine ? 1 : 0}`,
+                  `dso=${photo.dive_sort_order ?? ''}`,
+                  `dives=${encodeURIComponent(JSON.stringify(diveOpts))}`,
+                  `ename=${encodeURIComponent(eventName)}`,
+                  `canpush=${canpush}`,
+                  `pushed_enc=${photo.pushed_to_encyclopedia ? 1 : 0}`,
+                  `pushed_com=${photo.pushed_to_community ? 1 : 0}`,
+                  `species_enc=${photo.species_in_encyclopedia ? 1 : 0}`,
+                  `cam_make=${encodeURIComponent(photo.camera_make ?? '')}`,
+                  `cam_model=${encodeURIComponent(photo.camera_model ?? '')}`,
+                  `housing_id=${photo.housing_id ?? ''}`,
+                  `lens_id=${photo.lens_id ?? ''}`,
+                ].join('&');
+                router.push(`/${communityId}/events/${eventId}/photos/${photo.id}?${qs}`);
+              }}
+              style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}
+            >
+              <Image
+                source={{ uri: photo.thumbnail_url }}
+                style={{ width: tileSize, height: tileSize, borderRadius: 8 }}
+                resizeMode="cover"
+              />
+            </Pressable>
+
+            {photo.is_diving_photo ? (
+              <View style={styles.photoLabel}>
+                <Text style={styles.photoName} numberOfLines={1}>
+                  {photo.japanese_name ?? <Text style={styles.photoNameMissing}>和名未入力</Text>}
+                </Text>
+                {photo.scientific_name ? (
+                  <Text style={styles.photoSci} numberOfLines={1}>{photo.scientific_name}</Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            {showStrip ? (
+              <Pressable
+                onPress={() => !stripDone && !isPushing && onPush(photo.id)}
+                disabled={stripDone || isPushing}
+                style={[styles.pushStrip, stripDone && styles.pushStripDone]}
+              >
+                {isPushing ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Ionicons
+                    name={stripDone ? 'checkmark-circle' : 'arrow-up-circle-outline'}
+                    size={11}
+                    color={stripDone ? colors.textMuted : colors.primary}
+                  />
+                )}
+                <Text style={[styles.pushStripText, stripDone && styles.pushStripTextDone]} numberOfLines={1}>
+                  {isPushing ? 'Push中...' : stripLabel}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -1094,6 +1271,29 @@ const styles = StyleSheet.create({
   photoName: { fontSize: 12, fontWeight: '600', color: colors.text },
   photoNameMissing: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic' },
   photoSci: { fontSize: 11, color: colors.textSub, fontStyle: 'italic' },
+  pushStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    backgroundColor: colors.primaryBg,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  pushStripDone: {
+    backgroundColor: colors.bg,
+    borderColor: colors.border,
+  },
+  pushStripText: {
+    fontSize: 11,
+    color: colors.primary,
+    fontWeight: '600',
+    flex: 1,
+  },
+  pushStripTextDone: { color: colors.textMuted, fontWeight: '400' },
   // タブ
   tabBar: {
     flexDirection: 'row',
@@ -1149,6 +1349,10 @@ const ulStyles = StyleSheet.create({
   },
   suggName: { fontSize: 14, fontWeight: '600', color: colors.text },
   suggSci:  { fontSize: 12, color: colors.textSub, fontStyle: 'italic' },
+  inlineSugg: {
+    borderRadius: 10, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.card, overflow: 'hidden',
+  },
 
   sheet: {
     backgroundColor: colors.card,
@@ -1204,4 +1408,14 @@ const ulStyles = StyleSheet.create({
 
   skipBtn: { paddingVertical: 12, alignItems: 'center' },
   skipTxt: { fontSize: 14, color: colors.textMuted },
+
+  myEquipLabel: { fontSize: 11, fontWeight: '600', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  myEquipChips: { flexDirection: 'row', gap: 8 },
+  myEquipChip: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg, maxWidth: 220,
+  },
+  myEquipChipOn: { borderColor: colors.primary, backgroundColor: colors.primaryBg },
+  myEquipChipText: { fontSize: 13, color: colors.textSub },
+  myEquipChipTextOn: { color: colors.primary, fontWeight: '600' },
 });
