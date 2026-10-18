@@ -1,9 +1,37 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Keyboard,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { Button } from '@/components/ui';
 import { colors } from '@/constants/theme';
 import { useSession } from '@/context/SessionContext';
+import {
+  fetchHousingsForCamera,
+  fetchLensesForCameraHousing,
+  searchCameras,
+  type Camera,
+  type Housing,
+  type Lens,
+} from '@/services/supabaseService';
+import {
+  addMyEquipmentSet,
+  equipmentSetLabel,
+  loadMyEquipment,
+  removeMyEquipmentSet,
+  type MyEquipmentSet,
+} from '@/services/myEquipmentService';
 
 export default function SettingsScreen() {
   const { user, signOut } = useSession();
@@ -29,12 +57,318 @@ export default function SettingsScreen() {
         <InfoRow label="ランク" value={user.rank ?? '未設定'} />
       </View>
 
+      <MyEquipmentSection />
+
       <Button title="ログアウト" variant="secondary" onPress={confirmSignOut} />
 
       <Pressable onPress={() => router.push('/withdraw')} accessibilityRole="button" style={styles.withdraw}>
         <Text style={styles.withdrawText}>退会する</Text>
       </Pressable>
     </ScrollView>
+  );
+}
+
+// ── マイ機材 ────────────────────────────────────────────────────────────────
+
+function MyEquipmentSection() {
+  const [sets, setSets] = useState<MyEquipmentSet[]>([]);
+  const [adding, setAdding] = useState(false);
+
+  useEffect(() => {
+    loadMyEquipment().then(setSets);
+  }, []);
+
+  const handleAdd = (set: MyEquipmentSet) => {
+    setSets((prev) => [...prev, set]);
+    setAdding(false);
+  };
+
+  const handleRemove = (id: string) => {
+    Alert.alert('機材セットを削除しますか？', undefined, [
+      { text: 'キャンセル', style: 'cancel' },
+      {
+        text: '削除', style: 'destructive',
+        onPress: () => removeMyEquipmentSet(id).then(setSets),
+      },
+    ]);
+  };
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>マイ機材</Text>
+        <Pressable
+          onPress={() => setAdding(true)}
+          accessibilityRole="button"
+          accessibilityLabel="機材を追加"
+          hitSlop={8}
+          style={styles.addBtn}
+        >
+          <Ionicons name="add" size={20} color={colors.primary} />
+          <Text style={styles.addBtnText}>追加</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.card}>
+        {sets.length === 0 ? (
+          <Text style={styles.empty}>登録済みの機材がありません</Text>
+        ) : (
+          sets.map((set, i) => (
+            <View key={set.id}>
+              {i > 0 ? <View style={styles.divider} /> : null}
+              <View style={styles.equipRow}>
+                <View style={styles.equipInfo}>
+                  <Text style={styles.equipCamera} numberOfLines={1}>
+                    {set.camera.display_name ?? `${set.camera.brand ?? ''} ${set.camera.model}`.trim()}
+                  </Text>
+                  {(set.housing || set.lens) ? (
+                    <Text style={styles.equipSub} numberOfLines={1}>
+                      {[
+                        set.housing ? (set.housing.brand ? `${set.housing.brand} ${set.housing.model}` : set.housing.model) : null,
+                        set.lens ? (set.lens.brand ? `${set.lens.brand} ${set.lens.model}` : set.lens.model) : null,
+                      ].filter(Boolean).join(' / ')}
+                    </Text>
+                  ) : null}
+                </View>
+                <Pressable
+                  onPress={() => handleRemove(set.id)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="削除"
+                >
+                  <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                </Pressable>
+              </View>
+            </View>
+          ))
+        )}
+      </View>
+
+      <Modal
+        visible={adding}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setAdding(false)}
+      >
+        <AddEquipmentSheet onSaved={handleAdd} onCancel={() => setAdding(false)} />
+      </Modal>
+    </View>
+  );
+}
+
+// ── 機材追加シート ───────────────────────────────────────────────────────────
+
+function AddEquipmentSheet({
+  onSaved,
+  onCancel,
+}: {
+  onSaved: (set: MyEquipmentSet) => void;
+  onCancel: () => void;
+}) {
+  const [cameraQuery, setCameraQuery] = useState('');
+  const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
+  const [cameraSuggestions, setCameraSuggestions] = useState<Camera[]>([]);
+  const [housings, setHousings] = useState<Housing[]>([]);
+  const [loadingHousings, setLoadingHousings] = useState(false);
+  const [selectedHousing, setSelectedHousing] = useState<Housing | null>(null);
+  const [lenses, setLenses] = useState<Lens[]>([]);
+  const [loadingLenses, setLoadingLenses] = useState(false);
+  const [selectedLens, setSelectedLens] = useState<Lens | null>(null);
+  const [saving, setSaving] = useState(false);
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const onCameraChange = (text: string) => {
+    setCameraQuery(text);
+    setSelectedCamera(null);
+    if (debounce.current) clearTimeout(debounce.current);
+    debounce.current = setTimeout(async () => {
+      setCameraSuggestions(await searchCameras(text));
+    }, 300);
+  };
+
+  const selectCamera = (cam: Camera) => {
+    Keyboard.dismiss();
+    setSelectedCamera(cam);
+    setCameraQuery(cam.display_name ?? `${cam.brand ?? ''} ${cam.model}`.trim());
+    setCameraSuggestions([]);
+    setSelectedHousing(null);
+    setHousings([]);
+    setLenses([]);
+    setSelectedLens(null);
+    setLoadingHousings(true);
+    fetchHousingsForCamera(cam.id).then((h) => {
+      setHousings(h);
+      setLoadingHousings(false);
+    });
+  };
+
+  const clearCamera = () => {
+    setSelectedCamera(null);
+    setCameraQuery('');
+    setCameraSuggestions([]);
+    setHousings([]);
+    setLoadingHousings(false);
+    setSelectedHousing(null);
+    setLenses([]);
+    setSelectedLens(null);
+  };
+
+  const selectHousing = (h: Housing | null) => {
+    setSelectedHousing(h);
+    setSelectedLens(null);
+    setLenses([]);
+    setLoadingLenses(false);
+    if (selectedCamera && h) {
+      setLoadingLenses(true);
+      fetchLensesForCameraHousing(selectedCamera.id, h.id).then((l) => {
+        setLenses(l);
+        setLoadingLenses(false);
+      });
+    }
+  };
+
+  const save = async () => {
+    if (!selectedCamera) return;
+    setSaving(true);
+    try {
+      const next = await addMyEquipmentSet({
+        camera: selectedCamera,
+        housing: selectedHousing,
+        lens: selectedLens,
+      });
+      onSaved(next[next.length - 1]);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 候補リストは body ScrollView の中にインライン配置する。
+  // こうすることで TextInput の親 ScrollView が "always" になり、
+  // 候補タップが確実に onPress まで届く。
+  return (
+    <View style={addStyles.root}>
+      <View style={addStyles.header}>
+        <Pressable onPress={onCancel} hitSlop={12}>
+          <Text style={addStyles.cancel}>キャンセル</Text>
+        </Pressable>
+        <Text style={addStyles.title}>機材を追加</Text>
+        <Pressable onPress={save} disabled={!selectedCamera || saving} hitSlop={12}>
+          {saving ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Text style={[addStyles.done, !selectedCamera && addStyles.doneDisabled]}>保存</Text>
+          )}
+        </Pressable>
+      </View>
+
+      <ScrollView contentContainerStyle={addStyles.body} keyboardShouldPersistTaps="always">
+        {/* カメラ */}
+        <View style={addStyles.field}>
+          <Text style={addStyles.label}>カメラ <Text style={addStyles.required}>必須</Text></Text>
+          {selectedCamera ? (
+            <View style={addStyles.selectedRow}>
+              <Text style={addStyles.selectedText} numberOfLines={1}>
+                {selectedCamera.brand ? `${selectedCamera.brand} ` : ''}
+                {selectedCamera.display_name ?? selectedCamera.model}
+              </Text>
+              <Pressable onPress={clearCamera} hitSlop={8}>
+                <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+              </Pressable>
+            </View>
+          ) : (
+            <TextInput
+              style={addStyles.input}
+              value={cameraQuery}
+              onChangeText={onCameraChange}
+              placeholder="例: TG-6, OM-5, α7C"
+              placeholderTextColor={colors.textMuted}
+              autoCorrect={false}
+              returnKeyType="search"
+              autoFocus
+            />
+          )}
+          {/* 候補リスト：TextInput と同じ ScrollView 内に置くことで確実にタップが届く */}
+          {!selectedCamera && cameraSuggestions.length > 0 ? (
+            <View style={addStyles.suggestions}>
+              {cameraSuggestions.map((cam) => (
+                <Pressable key={cam.id} style={addStyles.suggRow} onPress={() => selectCamera(cam)}>
+                  <Text style={addStyles.suggName}>
+                    {cam.display_name ?? `${cam.brand ?? ''} ${cam.model}`.trim()}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+        </View>
+
+        {/* ハウジング */}
+        {selectedCamera ? (
+          loadingHousings ? (
+            <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 8 }} />
+          ) : housings.length === 0 ? (
+            <View style={addStyles.field}>
+              <Text style={addStyles.label}>ハウジング</Text>
+              <Text style={addStyles.noData}>このカメラのハウジング情報は未登録です</Text>
+            </View>
+          ) : (
+            <View style={addStyles.field}>
+              <Text style={addStyles.label}>ハウジング <Text style={addStyles.optional}>任意</Text></Text>
+              {selectedHousing ? (
+                <View style={addStyles.selectedRow}>
+                  <Text style={addStyles.selectedText} numberOfLines={1}>
+                    {selectedHousing.brand ? `${selectedHousing.brand} ` : ''}{selectedHousing.model}
+                  </Text>
+                  <Pressable onPress={() => selectHousing(null)} hitSlop={8}>
+                    <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                  </Pressable>
+                </View>
+              ) : (
+                <View style={addStyles.suggestions}>
+                  {housings.map((h) => (
+                    <Pressable key={h.id} style={addStyles.suggRow} onPress={() => selectHousing(h)}>
+                      <Text style={addStyles.suggName}>
+                        {h.brand ? `${h.brand} ` : ''}{h.model}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
+          )
+        ) : null}
+
+        {/* レンズ */}
+        {selectedCamera && selectedHousing ? (
+          loadingLenses ? (
+            <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 8 }} />
+          ) : lenses.length > 0 ? (
+            <View style={addStyles.field}>
+              <Text style={addStyles.label}>レンズ <Text style={addStyles.optional}>任意</Text></Text>
+              {selectedLens ? (
+                <View style={addStyles.selectedRow}>
+                  <Text style={addStyles.selectedText} numberOfLines={1}>
+                    {selectedLens.brand ? `${selectedLens.brand} ` : ''}{selectedLens.model}
+                  </Text>
+                  <Pressable onPress={() => setSelectedLens(null)} hitSlop={8}>
+                    <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                  </Pressable>
+                </View>
+              ) : (
+                <View style={addStyles.suggestions}>
+                  {lenses.map((l) => (
+                    <Pressable key={l.id} style={addStyles.suggRow} onPress={() => setSelectedLens(l)}>
+                      <Text style={addStyles.suggName}>
+                        {l.brand ? `${l.brand} ` : ''}{l.model}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
+          ) : null
+        ) : null}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -67,4 +401,61 @@ const styles = StyleSheet.create({
   value: { fontSize: 14, color: colors.text, flexShrink: 1 },
   withdraw: { alignSelf: 'center', paddingVertical: 12, paddingHorizontal: 16 },
   withdrawText: { fontSize: 14, color: colors.danger },
+  section: { gap: 10 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  addBtnText: { fontSize: 14, color: colors.primary },
+  empty: { fontSize: 14, color: colors.textMuted, paddingVertical: 14 },
+  equipRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 12, gap: 12,
+  },
+  equipInfo: { flex: 1, gap: 2 },
+  equipCamera: { fontSize: 14, fontWeight: '600', color: colors.text },
+  equipSub: { fontSize: 12, color: colors.textSub },
+});
+
+const addStyles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.bg },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  title: { fontSize: 15, fontWeight: '600', color: colors.text },
+  cancel: { fontSize: 15, color: colors.textSub },
+  done: { fontSize: 15, fontWeight: '600', color: colors.primary },
+  doneDisabled: { color: colors.textMuted },
+  suggestions: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    marginTop: 4,
+    overflow: 'hidden',
+  },
+  suggRow: {
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
+  },
+  suggName: { fontSize: 14, fontWeight: '600', color: colors.text },
+  body: { padding: 16, gap: 20, paddingBottom: 48 },
+  field: { gap: 8 },
+  label: { fontSize: 13, fontWeight: '600', color: colors.text },
+  required: { fontSize: 11, color: colors.primary, fontWeight: '400' },
+  optional: { fontSize: 11, color: colors.textMuted, fontWeight: '400' },
+  input: {
+    borderWidth: 1, borderColor: colors.border, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10, fontSize: 15,
+    color: colors.text, backgroundColor: colors.card,
+  },
+  selectedRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderWidth: 1, borderColor: colors.primary, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10, backgroundColor: colors.primaryBg,
+  },
+  selectedText: { fontSize: 15, color: colors.primary, fontWeight: '500', flex: 1 },
+  noData: { fontSize: 13, color: colors.textMuted, fontStyle: 'italic' },
 });
