@@ -420,6 +420,7 @@ export default function EventDetailScreen() {
             dives={dives}
             isOpen={isOpen}
             isOrganizer={isOrganizer}
+            canDownload={event.member_status === 'organizer' || event.member_status === 'accepted'}
             pushingId={pushingId}
             onPush={pushPhoto}
           />
@@ -1022,7 +1023,7 @@ function DiveRow({ dive }: { dive: Dive }) {
 }
 
 function PhotoGrid({
-  photos, tileSize, communityId, eventId, eventName, canEdit, dives, isOpen, isOrganizer, pushingId, onPush,
+  photos, tileSize, communityId, eventId, eventName, canEdit, dives, isOpen, isOrganizer, canDownload, pushingId, onPush,
 }: {
   photos: EventPhoto[];
   tileSize: number;
@@ -1033,6 +1034,8 @@ function PhotoGrid({
   dives: Dive[];
   isOpen: boolean;
   isOrganizer: boolean;
+  // 写真を端末に保存できるのはイベントの参加者（主催者・参加受諾済み）だけ
+  canDownload: boolean;
   pushingId: number | null;
   onPush: (photoId: number) => void;
 }) {
@@ -1082,6 +1085,7 @@ function PhotoGrid({
                   `dives=${encodeURIComponent(JSON.stringify(diveOpts))}`,
                   `ename=${encodeURIComponent(eventName)}`,
                   `canpush=${canpush}`,
+                  `dl=${canDownload ? 1 : 0}`,
                   `pushed_enc=${photo.pushed_to_encyclopedia ? 1 : 0}`,
                   `pushed_com=${photo.pushed_to_community ? 1 : 0}`,
                   `species_enc=${photo.species_in_encyclopedia ? 1 : 0}`,

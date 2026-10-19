@@ -52,6 +52,14 @@
         }
       ],
       [
+        "expo-media-library",
+        {
+          "photosPermission": "コミュニティのアイコンや写真を選ぶために、写真ライブラリを使用します。",
+          "savePhotosPermission": "イベントの写真を写真アプリに保存するために使用します。",
+          "granularPermissions": ["photo"]
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "コミュニティのアイコンや写真を選ぶために、写真ライブラリを使用します。",

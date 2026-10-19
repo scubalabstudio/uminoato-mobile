@@ -1,4 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { File } from 'expo-file-system';
+import { Asset, requestPermissionsAsync } from 'expo-media-library';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -38,6 +40,7 @@ export default function PhotoDetailScreen() {
     dso?: string; dives?: string; ename?: string;
     canpush?: string; pushed_enc?: string; pushed_com?: string; species_enc?: string;
     cam_make?: string; cam_model?: string; housing_id?: string; lens_id?: string;
+    dl?: string;
   }>();
 
   const communityId = Number(params.communityId);
@@ -48,6 +51,8 @@ export default function PhotoDetailScreen() {
   const canEdit = params.edit === '1';
   const isMine = params.mine === '1';
   const canPushInitial = params.canpush === '1';
+  // イベントの参加者（主催者・参加受諾済み）だけが端末に保存できる
+  const canDownload = params.dl === '1';
   const initPushedEnc = params.pushed_enc === '1';
   const initPushedCom = params.pushed_com === '1';
 
@@ -83,6 +88,7 @@ export default function PhotoDetailScreen() {
   const [pushedEnc, setPushedEnc] = useState(initPushedEnc);
   const [pushedCom, setPushedCom] = useState(initPushedCom);
   const [pushing, setPushing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const suggestDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [equipHousing, setEquipHousing] = useState<Housing | null>(null);
   const [equipLens, setEquipLens] = useState<Lens | null>(null);
@@ -212,6 +218,29 @@ export default function PhotoDetailScreen() {
     }
   };
 
+  // サーバーからJPEGを一時フォルダに落とし、写真アプリに保存する（追加のみの権限で足りる）
+  const savePhoto = async () => {
+    setDownloading(true);
+    let uri: string | null = null;
+    try {
+      const perm = await requestPermissionsAsync(true, ['photo']);
+      if (!perm.granted) {
+        Alert.alert('写真を保存できません', '設定アプリで、うみのあとに写真への追加を許可してください。');
+        return;
+      }
+      uri = await api.downloadEventPhoto(communityId, eventId, photoId);
+      await Asset.create(uri);
+      Alert.alert('写真アプリに保存しました');
+    } catch (e) {
+      if (!handleApiError(e)) Alert.alert('保存に失敗しました', errorMessage(e));
+    } finally {
+      if (uri) {
+        try { new File(uri).delete(); } catch { /* 一時ファイルなので消せなくても問題ない */ }
+      }
+      setDownloading(false);
+    }
+  };
+
   const confirmDelete = () => {
     Alert.alert('写真を削除', 'この写真を削除しますか？この操作は取り消せません。', [
       { text: 'キャンセル', style: 'cancel' },
@@ -234,10 +263,23 @@ export default function PhotoDetailScreen() {
   const uploaderName = photo ? photo.uploader_name : initUploader;
   const title = params.ename ? decodeURIComponent(params.ename) : '写真';
 
-  const headerRight = canEdit ? () => (
-    <Pressable onPress={openEdit} hitSlop={12} style={{ marginRight: 8 }}>
-      <Ionicons name="create-outline" size={22} color={colors.primary} />
-    </Pressable>
+  const headerRight = canEdit || canDownload ? () => (
+    <View style={styles.headerActions}>
+      {canDownload ? (
+        downloading ? (
+          <ActivityIndicator color={colors.primary} />
+        ) : (
+          <Pressable onPress={savePhoto} hitSlop={12} accessibilityRole="button" accessibilityLabel="写真アプリに保存">
+            <Ionicons name="download-outline" size={22} color={colors.primary} />
+          </Pressable>
+        )
+      ) : null}
+      {canEdit ? (
+        <Pressable onPress={openEdit} hitSlop={12} accessibilityRole="button" accessibilityLabel="写真を編集">
+          <Ionicons name="create-outline" size={22} color={colors.primary} />
+        </Pressable>
+      ) : null}
+    </View>
   ) : undefined;
 
   if (fetching) {
@@ -497,6 +539,7 @@ function StatCell({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 18, marginRight: 8 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   errorText: { fontSize: 14, color: colors.textSub, textAlign: 'center' },
   container: { paddingBottom: 48, gap: 20 },
