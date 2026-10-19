@@ -9,8 +9,9 @@ import { formatDateRange } from '@/utils/date';
 export type EventTag = 'invited' | 'joined' | 'organizer';
 
 const TAG_LABEL: Record<EventTag, string> = { invited: '招待中', joined: '参加中', organizer: '主催' };
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
 
-// イベント1件の行。タップでイベント詳細を開く。
+// イベント1件のカード。タップでイベント詳細を開く。
 // my-events（自分のイベント）とコミュニティのイベント一覧のどちらの形でも使えるよう、必要な項目だけを受け取る
 export function EventRow({
   event,
@@ -24,7 +25,8 @@ export function EventRow({
   sub?: string;
   tags?: EventTag[];
 }) {
-  const date = formatDateRange(event.start_date, event.end_date);
+  const range = formatDateRange(event.start_date, event.end_date);
+  const closed = event.status === 'closed';
 
   const open = () => {
     router.push({
@@ -37,48 +39,92 @@ export function EventRow({
     <Pressable
       onPress={open}
       accessibilityRole="button"
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
     >
-      <View style={styles.icon}>
-        <Ionicons name="calendar-outline" size={20} color={colors.primary} />
-      </View>
-      <View style={styles.text}>
-        <View style={styles.titleLine}>
-          <Text style={styles.name} numberOfLines={1}>
-            {event.name}
-          </Text>
-          {tags.map((t) => (
-            <Text key={t} style={[styles.chip, chipStyles[t]]}>
-              {TAG_LABEL[t]}
-            </Text>
-          ))}
-          {event.status === 'closed' ? <Text style={[styles.chip, styles.chipClosed]}>終了</Text> : null}
-        </View>
-        <Text style={styles.meta} numberOfLines={1}>
-          {[date || '日付未定', sub].filter(Boolean).join(' · ')}
+      <DateBlock date={event.start_date} closed={closed} />
+      <View style={styles.body}>
+        <Text style={[styles.name, closed && styles.nameClosed]} numberOfLines={2}>
+          {event.name}
         </Text>
+        <Text style={styles.meta} numberOfLines={1}>
+          {[range || '日付未定', sub].filter(Boolean).join(' · ')}
+        </Text>
+        {tags.length > 0 || closed ? (
+          <View style={styles.chips}>
+            {tags.map((t) => (
+              <Text key={t} style={[styles.chip, chipStyles[t]]}>
+                {TAG_LABEL[t]}
+              </Text>
+            ))}
+            {closed ? <Text style={[styles.chip, styles.chipClosed]}>終了</Text> : null}
+          </View>
+        ) : null}
       </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+      <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
     </Pressable>
   );
 }
 
+// 開始日の「月・日・曜日」を大きく出すブロック。日付未定ならカレンダーのアイコン
+function DateBlock({ date, closed }: { date: string | null; closed: boolean }) {
+  const parts = date?.slice(0, 10).split('-').map(Number);
+  const valid = parts && parts.length === 3 && parts.every((n) => !Number.isNaN(n));
+  return (
+    <View style={[styles.dateBlock, closed && styles.dateBlockClosed]}>
+      {valid ? (
+        <>
+          <Text style={[styles.dateMonth, closed && styles.dateTextClosed]}>{parts[1]}月</Text>
+          <Text style={[styles.dateDay, closed && styles.dateTextClosed]}>{parts[2]}</Text>
+          <Text style={[styles.dateWeek, closed && styles.dateTextClosed]}>
+            {WEEKDAYS[new Date(parts[0], parts[1] - 1, parts[2]).getDay()]}
+          </Text>
+        </>
+      ) : (
+        <Ionicons name="calendar-outline" size={24} color={closed ? colors.textMuted : colors.primary} />
+      )}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 4, borderRadius: 12 },
-  rowPressed: { backgroundColor: colors.primaryBg },
-  icon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  cardPressed: { backgroundColor: colors.primaryBg },
+  dateBlock: {
+    width: 56,
+    height: 64,
+    borderRadius: 12,
     backgroundColor: colors.primaryBg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  text: { flex: 1, gap: 2 },
-  titleLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  name: { fontSize: 15, fontWeight: '600', color: colors.text, flexShrink: 1 },
-  meta: { fontSize: 12, color: colors.textSub },
-  chip: { fontSize: 11, fontWeight: '600', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, overflow: 'hidden' },
+  dateBlockClosed: { backgroundColor: colors.bg },
+  dateMonth: { fontSize: 11, fontWeight: '600', color: colors.primary },
+  dateDay: { fontSize: 24, fontWeight: '700', color: colors.primary, lineHeight: 28 },
+  dateWeek: { fontSize: 11, color: colors.primary },
+  dateTextClosed: { color: colors.textSub },
+  body: { flex: 1, gap: 4 },
+  name: { fontSize: 17, fontWeight: '700', color: colors.text, lineHeight: 23 },
+  nameClosed: { color: colors.textSub },
+  meta: { fontSize: 13, color: colors.textSub },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 },
+  chip: {
+    fontSize: 12,
+    fontWeight: '600',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
   chipClosed: { color: colors.textSub, backgroundColor: colors.border },
 });
 

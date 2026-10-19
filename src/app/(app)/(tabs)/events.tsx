@@ -62,7 +62,7 @@ function EventsList({ communityId }: { communityId: number }) {
     () =>
       invitedEvents
         .filter((ev) => ev.community_id === communityId && ev.member_status === 'accepted')
-        .sort(byStartDateDesc),
+        .sort(byCreatedDesc),
     [invitedEvents, communityId],
   );
   const myStatus = useMemo(() => {
@@ -308,12 +308,10 @@ function HistorySection({
   );
 }
 
-// 開催日の新しい順（日付未定は最後）
-function byStartDateDesc(a: MyInvitedEvent, b: MyInvitedEvent): number {
-  if (a.start_date === b.start_date) return b.id - a.id;
-  if (!a.start_date) return 1;
-  if (!b.start_date) return -1;
-  return a.start_date < b.start_date ? 1 : -1;
+// 作成の新しい順（コミュニティ全体の一覧と同じ並び）
+function byCreatedDesc(a: MyInvitedEvent, b: MyInvitedEvent): number {
+  if (a.created_at === b.created_at) return b.id - a.id;
+  return a.created_at < b.created_at ? 1 : -1;
 }
 
 const styles = StyleSheet.create({
