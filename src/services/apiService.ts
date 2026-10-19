@@ -636,36 +636,6 @@ export async function addEncyclopediaPhoto(
   return res.entry;
 }
 
-// コミュニティメンバー誰でも。写真を直接未同定一覧にアップロードする
-export async function uploadUnidentifiedPhoto(
-  communityId: number,
-  fileUri: string,
-  mimeType = 'image/jpeg',
-  ext = 'jpg',
-  equipment: {
-    cameraMake?: string;
-    cameraModel?: string;
-    housingId?: number | null;
-    lensId?: number | null;
-    pointName?: string;
-    pointId?: number | null;
-  } = {},
-): Promise<UnidentifiedPhoto> {
-  const form = new FormData();
-  form.append('image', { uri: fileUri, name: `photo.${ext}`, type: mimeType } as unknown as Blob);
-  if (equipment.cameraMake) form.append('camera_make', equipment.cameraMake);
-  if (equipment.cameraModel) form.append('camera_model', equipment.cameraModel);
-  if (equipment.housingId != null) form.append('housing_id', String(equipment.housingId));
-  if (equipment.lensId != null) form.append('lens_id', String(equipment.lensId));
-  if (equipment.pointName) form.append('point_name', equipment.pointName);
-  if (equipment.pointId != null) form.append('point_id', String(equipment.pointId));
-  const res = await uploadForm<{ photo: UnidentifiedPhoto }>(
-    `communities/${communityId}/unidentified-photos`,
-    form,
-  );
-  return res.photo;
-}
-
 // 管理者・図鑑編集者のみ。最後の1枚を消すとエントリごと消える（entry_deleted = true）
 export async function deleteEncyclopediaPhoto(
   communityId: number,

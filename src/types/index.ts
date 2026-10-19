@@ -206,10 +206,10 @@ export interface EncyclopediaEntryDetail extends EncyclopediaEntry {
 
 export type EncyclopediaSort = 'name_asc' | 'scientific_asc' | 'newest' | 'oldest' | 'photos_desc';
 
-// イベントで未同定一覧へPushされ、まだ同定されていない写真（event_id はイベント経由でない直接アップロード時は null）
+// イベントで未同定一覧へPushされ、まだ同定されていない写真
 export interface UnidentifiedPhoto {
   id: number;
-  event_id: number | null;
+  event_id: number;
   event_name: string | null;
   uploader_name: string | null;
   japanese_name: string | null;
