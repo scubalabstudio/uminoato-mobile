@@ -23,6 +23,7 @@ import { useSession } from '@/context/SessionContext';
 import * as api from '@/services/apiService';
 import { searchCreatures } from '@/services/supabaseService';
 import type { UnidentifiedPhoto } from '@/types';
+import { markEncyclopediaStale } from '@/utils/encyclopediaStale';
 
 const PADDING = 16;
 const GAP = 4;
@@ -107,10 +108,10 @@ function UnidentifiedList({ communityId, canEdit }: { communityId: number; canEd
     setRefreshing(false);
   };
 
+  // 一覧からは外すが、続けて図鑑に載せるかを選べるよう画面は閉じない
   const onIdentified = (photo: UnidentifiedPhoto) => {
     setPhotos((list) => list.filter((p) => p.id !== photo.id));
     setTotal((n) => (n === null ? n : Math.max(0, n - 1)));
-    setSelected(null);
   };
 
   const header = (
@@ -208,6 +209,10 @@ function PhotoSheet({
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<{ id: number; name: string; scientific_name: string | null }[]>([]);
   const suggDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 同定できた名前。入っていれば「図鑑にも載せる」を出す
+  const [identifiedName, setIdentifiedName] = useState<string | null>(null);
+  const [pushing, setPushing] = useState(false);
+  const [pushed, setPushed] = useState(false);
 
   const onJaNameChange = (text: string) => {
     setJapaneseName(text);
@@ -244,6 +249,8 @@ function PhotoSheet({
         japanese_name: name,
         scientific_name: scientificName.trim() || null,
       });
+      setIdentifiedName(name);
+      setSuggestions([]);
       onIdentified(photo);
     } catch (e) {
       if (handleApiError(e)) return;
@@ -252,6 +259,23 @@ function PhotoSheet({
       setError(errorMessage(e));
     } finally {
       setSaving(false);
+    }
+  };
+
+  // イベントの写真を図鑑へ送るAPIを使う。未同定一覧に載る写真はイベントが終了済みなので、そのまま送れる
+  const pushToEncyclopedia = async () => {
+    setPushing(true);
+    setError(null);
+    try {
+      await api.pushEventPhoto(communityId, photo.event_id, photo.id);
+      markEncyclopediaStale();
+      setPushed(true);
+    } catch (e) {
+      if (handleApiError(e)) return;
+      // 同じ種の写真がすでに5枚ある場合などは、サーバーのメッセージをそのまま出す
+      setError(errorMessage(e));
+    } finally {
+      setPushing(false);
     }
   };
 
@@ -288,7 +312,27 @@ function PhotoSheet({
           </Text>
         </View>
 
-        {canEdit ? (
+        {identifiedName ? (
+          <View style={styles.form}>
+            <View style={styles.done}>
+              <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
+              <Text style={styles.doneText}>「{identifiedName}」として同定しました</Text>
+            </View>
+            {pushed ? (
+              <View style={styles.done}>
+                <Ionicons name="book" size={20} color={colors.primary} />
+                <Text style={styles.doneText}>図鑑に載せました</Text>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.hint}>この写真を図鑑にも載せますか？同じ種の写真は図鑑に5枚まで載せられます。</Text>
+                <FormError message={error} />
+                <Button title="図鑑にも載せる" onPress={pushToEncyclopedia} loading={pushing} />
+              </>
+            )}
+            <Button title="閉じる" variant="secondary" onPress={onClose} disabled={pushing} />
+          </View>
+        ) : canEdit ? (
           <View style={styles.form}>
             <Field
               label="和名"
@@ -323,9 +367,7 @@ function PhotoSheet({
             />
             <FormError message={error} />
             <Button title="同定する" onPress={identify} loading={saving} />
-            <Text style={styles.hint}>
-              同定しても図鑑には載りません。図鑑に載せるには、イベントの写真から図鑑へ送ってください。
-            </Text>
+            <Text style={styles.hint}>同定したあと、続けて図鑑に載せるかを選べます。</Text>
           </View>
         ) : null}
       </ScrollView>
@@ -370,6 +412,8 @@ const styles = StyleSheet.create({
   metaText: { fontSize: 13, color: colors.textSub },
   form: { gap: 12 },
   hint: { fontSize: 12, color: colors.textSub, lineHeight: 18 },
+  done: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  doneText: { fontSize: 15, fontWeight: '600', color: colors.text, flexShrink: 1 },
   inlineSugg: {
     borderRadius: 10, borderWidth: 1, borderColor: colors.border,
     backgroundColor: colors.card, overflow: 'hidden',
