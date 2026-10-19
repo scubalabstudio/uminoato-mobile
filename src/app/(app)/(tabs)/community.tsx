@@ -1,7 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, Tabs } from 'expo-router';
-import { useState, type ComponentProps } from 'react';
-import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState, type ComponentProps } from 'react';
+import { ActivityIndicator, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+
+import { NetworkErrorView } from '@/components/NetworkErrorView';
 
 import { Avatar } from '@/components/Avatar';
 import { RoleBadge } from '@/components/RoleBadge';
@@ -13,9 +15,23 @@ import { useCommunity } from '@/context/CommunityContext';
 
 // 右下タブ：選択中のコミュニティの情報と切り替え
 export default function CommunityTab() {
-  const { current, loadError, reload } = useCommunity();
+  const { current, loadError, reload, isLoading } = useCommunity();
   const [refreshing, setRefreshing] = useState(false);
-  if (!current) return null;
+  const [retrying, setRetrying] = useState(false);
+  const retry = useCallback(async () => {
+    setRetrying(true);
+    await reload();
+    setRetrying(false);
+  }, [reload]);
+  if (!current) {
+    if (isLoading) return <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>;
+    if (loadError) return (
+      <View style={styles.center}>
+        <NetworkErrorView message={loadError} onRetry={retry} loading={retrying} />
+      </View>
+    );
+    return null;
+  }
 
   const refresh = async () => {
     setRefreshing(true);
@@ -43,10 +59,7 @@ export default function CommunityTab() {
       />
 
       {loadError ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{loadError}</Text>
-          <Button title="再読み込み" variant="secondary" onPress={reload} />
-        </View>
+        <NetworkErrorView message={loadError} onRetry={retry} loading={retrying} />
       ) : null}
 
       <View style={styles.summary}>
@@ -134,10 +147,9 @@ function MenuRow({
 }
 
 const styles = StyleSheet.create({
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
   container: { padding: 16, paddingBottom: 48, gap: 16 },
   titleText: { fontSize: 20, fontWeight: '700', color: colors.text, maxWidth: 260 },
-  errorBox: { gap: 8 },
-  errorText: { color: colors.danger, fontSize: 14 },
   summary: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   summaryText: { flex: 1, gap: 4 },
   name: { fontSize: 20, fontWeight: '700', color: colors.text },

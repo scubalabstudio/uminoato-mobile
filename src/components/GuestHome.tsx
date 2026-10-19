@@ -46,7 +46,7 @@ export function GuestHome() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
       >
         {loadError ? (
-          <View style={styles.errorBox}>
+          <View style={styles.errorCenter}>
             <Text style={styles.errorText}>{loadError}</Text>
             <Button title="再読み込み" variant="secondary" onPress={reload} />
           </View>
@@ -132,8 +132,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 16, height: 52 },
   container: { padding: 16, paddingBottom: 48, gap: 16 },
-  errorBox: { gap: 8 },
-  errorText: { color: colors.danger, fontSize: 14 },
+  errorCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 48 },
+  errorText: { color: colors.danger, fontSize: 14, textAlign: 'center' },
   flex1: { flex: 1 },
   switchRow: {
     flexDirection: 'row',

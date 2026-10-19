@@ -1,4 +1,3 @@
-import { fetch as expoFetch } from 'expo/fetch';
 import { File, Paths } from 'expo-file-system';
 
 import { BACKEND_URL } from '../config/api';
@@ -483,21 +482,26 @@ export async function downloadEventPhoto(
   photoId: number,
 ): Promise<string> {
   const token = await getAccessToken();
-  let res: Awaited<ReturnType<typeof expoFetch>>;
+  const url = `${BACKEND_URL}/api/communities/${communityId}/events/${eventId}/photos/${photoId}/download`;
+
+  let res: Response;
   try {
-    res = await expoFetch(`${BACKEND_URL}/api/communities/${communityId}/events/${eventId}/photos/${photoId}/download`, {
-      headers: { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    res = await fetch(url, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     });
   } catch {
     throw new ApiError(0, '通信エラーが発生しました。電波の良い場所で再度お試しください。');
   }
+
   if (res.status === 401) throw new UnauthorizedError();
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new ApiError(res.status, errorMessage(body, res.status));
   }
+
+  const buf = await res.arrayBuffer();
   const file = new File(Paths.cache, `uminoato_photo_${photoId}_${Date.now()}.jpg`);
-  file.write(await res.bytes());
+  file.write(new Uint8Array(buf));
   return file.uri;
 }
 

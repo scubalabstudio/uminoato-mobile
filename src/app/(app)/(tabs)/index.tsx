@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 
 import { FilterChips } from '@/components/SegmentedControl';
+import { NetworkErrorView } from '@/components/NetworkErrorView';
 import { Button, FormError, errorMessage } from '@/components/ui';
 import { canEditEncyclopedia } from '@/constants/roles';
 import { colors } from '@/constants/theme';
@@ -57,8 +58,22 @@ type Filters = { q: string; sort: EncyclopediaSort; tagIds: number[] };
 
 // コミュニティ図鑑の一覧。検索・並び替え・タグで絞り込み、下までスクロールすると続きを読む
 export default function EncyclopediaTab() {
-  const { current } = useCommunity();
-  if (!current) return null;
+  const { current, isLoading, loadError, reload } = useCommunity();
+  const [retrying, setRetrying] = useState(false);
+  const retry = useCallback(async () => {
+    setRetrying(true);
+    await reload();
+    setRetrying(false);
+  }, [reload]);
+  if (!current) {
+    if (isLoading) return <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>;
+    if (loadError) return (
+      <View style={styles.center}>
+        <NetworkErrorView message={loadError} onRetry={retry} loading={retrying} />
+      </View>
+    );
+    return null;
+  }
   // コミュニティを切り替えたら、絞り込みと読み込んだ一覧をリセットする
   return (
     <EncyclopediaList
@@ -734,6 +749,7 @@ function EntryCard({ entry, width, communityId }: { entry: EncyclopediaEntry; wi
 }
 
 const styles = StyleSheet.create({
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
   root: { flex: 1 },
   fab: {
     position: 'absolute',

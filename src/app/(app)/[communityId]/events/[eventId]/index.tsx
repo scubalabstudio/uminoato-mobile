@@ -18,6 +18,7 @@ import {
   View,
 } from 'react-native';
 
+import { NetworkErrorView } from '@/components/NetworkErrorView';
 import { Button, errorMessage } from '@/components/ui';
 import { isOwner } from '@/constants/roles';
 import { colors } from '@/constants/theme';
@@ -35,7 +36,7 @@ import {
   loadMyEquipment,
   type MyEquipmentSet,
 } from '@/services/myEquipmentService';
-import { ReportTab } from './ReportTab';
+import { ReportTab } from './_components/ReportTab';
 import type { CommunityEventDetail, Dive, EventMember, EventPhoto } from '@/types';
 import { formatDateRange } from '@/utils/date';
 import { parseExifCamera } from '@/utils/exif';
@@ -48,6 +49,7 @@ export default function EventDetailScreen() {
   const { communities, invitedEvents, respondEventInvitation, reload } = useCommunity();
   const [event, setEvent] = useState<CommunityEventDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [responding, setResponding] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -59,11 +61,17 @@ export default function EventDetailScreen() {
   const { width: screenWidth } = useWindowDimensions();
 
   const load = useCallback(async () => {
+    setError(null);
+    setNotFound(false);
     try {
       setEvent(await api.fetchEvent(communityId, eventId));
-      setError(null);
     } catch (e) {
-      if (!handleApiError(e)) setError(errorMessage(e));
+      if (e instanceof api.ApiError && e.status === 404) {
+        setNotFound(true);
+        setError(null);
+      } else if (!handleApiError(e)) {
+        setError(errorMessage(e));
+      }
     }
   }, [communityId, eventId, handleApiError]);
 
@@ -261,11 +269,17 @@ export default function EventDetailScreen() {
     return (
       <View style={styles.center}>
         <Stack.Screen options={{ title }} />
-        {error ? (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{error}</Text>
-            <Button title="再読み込み" variant="secondary" onPress={load} />
+        {notFound ? (
+          <View style={styles.notFound}>
+            <Ionicons name="alert-circle-outline" size={44} color={colors.textMuted} />
+            <View style={styles.notFoundTexts}>
+              <Text style={styles.errorTitle}>イベントが見つかりません</Text>
+              <Text style={styles.notFoundSub}>このイベントは削除されたか、アクセスできません。</Text>
+            </View>
+            <Button title="戻る" variant="secondary" onPress={() => router.canGoBack() ? router.back() : router.replace('/' as never)} />
           </View>
+        ) : error ? (
+          <NetworkErrorView message={error} onRetry={load} />
         ) : (
           <ActivityIndicator color={colors.primary} />
         )}
@@ -287,7 +301,6 @@ export default function EventDetailScreen() {
   const headerRight = isOrganizer ? () => (
     <Pressable
       hitSlop={12}
-      style={{ marginRight: 8 }}
       onPress={() => {
         const qs = [
           `name=${encodeURIComponent(event.name)}`,
@@ -1149,8 +1162,10 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   container: { paddingBottom: 48, gap: 0 },
-  errorBox: { gap: 12, alignSelf: 'stretch' },
-  errorText: { color: colors.danger, fontSize: 14, textAlign: 'center' },
+  notFound: { alignItems: 'center', gap: 20 },
+  notFoundTexts: { alignItems: 'center', gap: 6 },
+  errorTitle: { fontSize: 16, fontWeight: '700', color: colors.text, textAlign: 'center' },
+  notFoundSub: { fontSize: 13, color: colors.textSub, textAlign: 'center', lineHeight: 19 },
 
   // ヘッダー
   head: {

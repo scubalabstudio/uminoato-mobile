@@ -1,6 +1,7 @@
 import { SplashScreen, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { SessionProvider, useSession } from '@/context/SessionContext';
 
 SplashScreen.preventAutoHideAsync();
@@ -10,6 +11,7 @@ export default function RootLayout() {
     <SessionProvider>
       <SplashScreenController />
       <RootNavigator />
+      <OfflineBanner />
       <StatusBar style="dark" />
     </SessionProvider>
   );

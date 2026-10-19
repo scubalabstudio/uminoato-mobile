@@ -16,6 +16,7 @@ import {
   View,
 } from 'react-native';
 
+import { NetworkErrorView } from '@/components/NetworkErrorView';
 import { OwnerOnly } from '@/components/OwnerOnly';
 import { Button, FormError, errorMessage } from '@/components/ui';
 import { WEB_URL } from '@/config/api';
@@ -46,6 +47,7 @@ function InviteScreen({ community }: { community: Community }) {
   const [invitations, setInvitations] = useState<CommunityInvitation[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   // 他の管理者に降格された等の 403 なら、一覧を取り直してこの画面を「管理者のみ」の案内に切り替える
   const onError = useCallback(
@@ -66,6 +68,12 @@ function InviteScreen({ community }: { community: Community }) {
     }
   }, [community.id, onError]);
 
+  const retry = useCallback(async () => {
+    setRetrying(true);
+    await load();
+    setRetrying(false);
+  }, [load]);
+
   useFocusEffect(
     useCallback(() => {
       load();
@@ -77,6 +85,14 @@ function InviteScreen({ community }: { community: Community }) {
     await load();
     setRefreshing(false);
   };
+
+  if (invitations === null && loadError) {
+    return (
+      <View style={styles.center}>
+        <NetworkErrorView message={loadError} onRetry={retry} loading={retrying} />
+      </View>
+    );
+  }
 
   const userInvitations = invitations?.filter((i) => i.type === 'user') ?? [];
   const link = invitations?.find((i) => i.type === 'link') ?? null;
@@ -90,10 +106,7 @@ function InviteScreen({ community }: { community: Community }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
       >
         {loadError ? (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{loadError}</Text>
-            <Button title="再読み込み" variant="secondary" onPress={load} />
-          </View>
+          <NetworkErrorView message={loadError} onRetry={retry} loading={retrying} />
         ) : null}
 
         <LinkSection
@@ -404,9 +417,8 @@ function Section({
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
   container: { padding: 16, paddingBottom: 48, gap: 24 },
-  errorBox: { gap: 8 },
-  errorText: { color: colors.danger, fontSize: 14 },
   section: { gap: 8 },
   sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   sectionTitle: { fontSize: 13, fontWeight: '600', color: colors.textSub },

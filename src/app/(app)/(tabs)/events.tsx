@@ -5,6 +5,7 @@ import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Tex
 
 import { EventRow, type EventTag } from '@/components/EventRow';
 import { FilterChips, SegmentedControl } from '@/components/SegmentedControl';
+import { NetworkErrorView } from '@/components/NetworkErrorView';
 import { Button, errorMessage } from '@/components/ui';
 import { colors } from '@/constants/theme';
 import { useCommunity } from '@/context/CommunityContext';
@@ -36,8 +37,23 @@ const EMPTY_TEXT: Record<Filter, string> = {
 
 // 参加中＝自分が手を動かせる（写真のアップロードなど）イベント、全体＝見るだけのイベントも含めたコミュニティの全イベント
 export default function EventsTab() {
-  const { current } = useCommunity();
-  if (!current) return null;
+  const { current, isLoading, loadError, reload } = useCommunity();
+  const [retrying, setRetrying] = useState(false);
+  const retry = useCallback(async () => {
+    setRetrying(true);
+    await reload();
+    setRetrying(false);
+  }, [reload]);
+
+  if (!current) {
+    if (isLoading) return <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>;
+    if (loadError) return (
+      <View style={styles.center}>
+        <NetworkErrorView message={loadError} onRetry={retry} loading={retrying} />
+      </View>
+    );
+    return null;
+  }
   return (
     <View style={{ flex: 1 }}>
       <EventsList key={current.id} communityId={current.id} />
@@ -315,6 +331,7 @@ function byCreatedDesc(a: MyInvitedEvent, b: MyInvitedEvent): number {
 }
 
 const styles = StyleSheet.create({
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
   list: { padding: 16, paddingBottom: 48 },
   header: { gap: 12, marginBottom: 12 },
   loading: { paddingVertical: 24 },

@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, Tabs } from 'expo-router';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { AppLogo } from '@/components/AppLogo';
 import { Avatar } from '@/components/Avatar';
@@ -13,26 +13,20 @@ import { useCommunity } from '@/context/CommunityContext';
 
 // 選択中のコミュニティの中を移動する下部タブ。右端のコミュニティアイコンを長押しすると切り替えシートを開く（Instagram と同じ）
 export default function TabsLayout() {
-  const { current, invitations, invitedEvents, guestEvents, isLoading } = useCommunity();
+  const { current, invitations, invitedEvents, guestEvents, isLoading, loadError } = useCommunity();
 
-  if (isLoading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
-  }
-  // ゲストを選んでいる・所属コミュニティが無いときはタブを出さない
-  if (!current) return <GuestHome />;
+  // ロード完了・エラーなし・コミュニティ未所属のときだけゲストホームへ（エラー時はタブを維持する）
+  if (!isLoading && !current && !loadError) return <GuestHome />;
 
-  const eventsHere = invitedEvents.filter((ev) => ev.community_id === current.id);
+  const eventsHere = current
+    ? invitedEvents.filter((ev) => ev.community_id === current.id)
+    : [];
   const eventInvitations = eventsHere.filter((ev) => ev.member_status === 'invited').length;
 
   return (
     <Tabs
       screenOptions={{
         headerTitleAlign: 'left',
-        // 上部はロゴ。どのタブにいるかは下のタブバーで分かる（コミュニティタブだけはコミュニティ名に差し替える）
         headerTitle: () => <AppLogo />,
         headerShadowVisible: false,
         headerStyle: { backgroundColor: colors.bg },
@@ -75,8 +69,7 @@ export default function TabsLayout() {
         name="invite"
         options={{
           title: '招待',
-          // メンバーの招待はコミュニティ管理者だけ（Web版と同じ）
-          href: isOwner(current.role) ? undefined : null,
+          href: current && isOwner(current.role) ? undefined : null,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'person-add' : 'person-add-outline'} size={22} color={color} />
           ),
@@ -87,13 +80,15 @@ export default function TabsLayout() {
         options={{
           title: 'コミュニティ',
           headerRight: () => <SettingsButton />,
-          // コミュニティへの招待、またはゲスト参加のイベントの招待があれば赤い点（切り替えシートで応答する）
           tabBarBadge:
             invitations.length > 0 || guestEvents.some((ev) => ev.member_status === 'invited') ? '' : undefined,
           tabBarBadgeStyle: styles.dot,
           tabBarIcon: ({ focused }) => (
             <View style={[styles.ring, focused && styles.ringActive]}>
-              <Avatar name={current.name} uri={current.icon_url} size={24} />
+              {current
+                ? <Avatar name={current.name} uri={current.icon_url} size={24} />
+                : <View style={styles.avatarPlaceholder} />
+              }
             </View>
           ),
         }}
@@ -106,8 +101,8 @@ export default function TabsLayout() {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
   ring: { padding: 1.5, borderRadius: 16, borderWidth: 1.5, borderColor: 'transparent' },
   ringActive: { borderColor: colors.text },
   dot: { minWidth: 10, maxHeight: 10, borderRadius: 5, backgroundColor: colors.danger, fontSize: 1 },
+  avatarPlaceholder: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.border },
 });

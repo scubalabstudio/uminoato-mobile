@@ -267,15 +267,17 @@ export default function PhotoDetailScreen() {
     <View style={styles.headerActions}>
       {canDownload ? (
         downloading ? (
-          <ActivityIndicator color={colors.primary} />
+          <View style={styles.headerBtn}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
         ) : (
-          <Pressable onPress={savePhoto} hitSlop={12} accessibilityRole="button" accessibilityLabel="写真アプリに保存">
+          <Pressable style={styles.headerBtn} onPress={savePhoto} accessibilityRole="button" accessibilityLabel="写真アプリに保存">
             <Ionicons name="download-outline" size={22} color={colors.primary} />
           </Pressable>
         )
       ) : null}
       {canEdit ? (
-        <Pressable onPress={openEdit} hitSlop={12} accessibilityRole="button" accessibilityLabel="写真を編集">
+        <Pressable style={styles.headerBtn} onPress={openEdit} accessibilityRole="button" accessibilityLabel="写真を編集">
           <Ionicons name="create-outline" size={22} color={colors.primary} />
         </Pressable>
       ) : null}
@@ -539,7 +541,8 @@ function StatCell({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 18, marginRight: 8 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 0, marginRight: 4 },
+  headerBtn: { padding: 8 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   errorText: { fontSize: 14, color: colors.textSub, textAlign: 'center' },
   container: { paddingBottom: 48, gap: 20 },

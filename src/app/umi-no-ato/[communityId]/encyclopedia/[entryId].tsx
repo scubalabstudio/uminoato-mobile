@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Stack, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState, type ReactNode } from 'react';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 
+import { NetworkErrorView } from '@/components/NetworkErrorView';
 import { colors } from '@/constants/theme';
 import * as api from '@/services/apiService';
 import { fetchCreatureById, fetchHousingById, fetchLensById, type CreatureDetail, type Housing, type Lens } from '@/services/supabaseService';
@@ -31,15 +32,25 @@ export default function PublicEncyclopediaEntryScreen() {
   const [photoLens, setPhotoLens] = useState<Lens | null>(null);
   const [index, setIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
 
-  useEffect(() => {
-    api.fetchPublicEncyclopediaEntry(cid, eid)
-      .then(e => {
-        setEntry(e);
-        if (e.creature_id) fetchCreatureById(e.creature_id).then(setCreature).catch(() => {});
-      })
-      .catch(e => setError(e instanceof Error ? e.message : 'エラーが発生しました'));
+  const load = useCallback(async () => {
+    setError(null);
+    setNotFound(false);
+    try {
+      const e = await api.fetchPublicEncyclopediaEntry(cid, eid);
+      setEntry(e);
+      if (e.creature_id) fetchCreatureById(e.creature_id).then(setCreature).catch(() => {});
+    } catch (e) {
+      if (e instanceof api.ApiError && e.status === 404) {
+        setNotFound(true);
+      } else {
+        setError(e instanceof Error ? e.message : 'エラーが発生しました');
+      }
+    }
   }, [cid, eid]);
+
+  useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
     setPhotoHousing(null);
@@ -57,8 +68,20 @@ export default function PublicEncyclopediaEntryScreen() {
     return (
       <View style={styles.center}>
         <Stack.Screen options={{ title }} />
-        {error ? (
-          <Text style={styles.errorText}>{error}</Text>
+        {notFound ? (
+          <View style={styles.notFound}>
+            <Ionicons name="alert-circle-outline" size={48} color={colors.textMuted} />
+            <Text style={styles.notFoundTitle}>図鑑エントリが見つかりません</Text>
+            <Text style={styles.notFoundSub}>このエントリは削除されたか、アクセスできません。</Text>
+            <Pressable
+              onPress={() => router.canGoBack() ? router.back() : router.replace('/' as never)}
+              style={styles.backBtn}
+            >
+              <Text style={styles.backBtnText}>一覧に戻る</Text>
+            </Pressable>
+          </View>
+        ) : error ? (
+          <NetworkErrorView message={error} onRetry={load} />
         ) : (
           <ActivityIndicator color={colors.primary} />
         )}
@@ -245,6 +268,15 @@ function formatDate(iso: string): string {
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   errorText: { color: colors.danger, fontSize: 14, textAlign: 'center' },
+  notFound: { gap: 12, alignItems: 'center' },
+  notFoundTitle: { fontSize: 17, fontWeight: '700', color: colors.text, textAlign: 'center' },
+  notFoundSub: { fontSize: 14, color: colors.textSub, textAlign: 'center', lineHeight: 20 },
+  backBtn: {
+    marginTop: 4,
+    paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8,
+    backgroundColor: colors.primaryBg, borderWidth: 1, borderColor: colors.primary,
+  },
+  backBtnText: { color: colors.primary, fontWeight: '600', fontSize: 14 },
   container: { paddingBottom: 48 },
 
   noPhoto: { backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center', gap: 6 },

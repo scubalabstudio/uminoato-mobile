@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 
+import { NetworkErrorView } from '@/components/NetworkErrorView';
 import { Button, Field, FormError, errorMessage } from '@/components/ui';
 import { canEditEncyclopedia } from '@/constants/roles';
 import { colors } from '@/constants/theme';
@@ -31,8 +32,22 @@ const COLUMNS = 3;
 
 // イベントで未同定一覧へPushされ、まだ種が確定していない写真。管理者・図鑑編集者は名前を入れて同定できる
 export default function UnidentifiedTab() {
-  const { current } = useCommunity();
-  if (!current) return null;
+  const { current, isLoading, loadError, reload } = useCommunity();
+  const [retrying, setRetrying] = useState(false);
+  const retry = useCallback(async () => {
+    setRetrying(true);
+    await reload();
+    setRetrying(false);
+  }, [reload]);
+  if (!current) {
+    if (isLoading) return <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>;
+    if (loadError) return (
+      <View style={styles.center}>
+        <NetworkErrorView message={loadError} onRetry={retry} loading={retrying} />
+      </View>
+    );
+    return null;
+  }
   return (
     <UnidentifiedList
       key={current.id}
@@ -381,6 +396,7 @@ function formatDate(iso: string): string {
 }
 
 const styles = StyleSheet.create({
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
   root: { flex: 1 },
   list: { padding: PADDING, paddingBottom: 48 },
   columns: { gap: GAP, marginBottom: GAP },
