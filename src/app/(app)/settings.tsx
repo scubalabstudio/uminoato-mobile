@@ -1,10 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Keyboard,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -15,6 +17,7 @@ import {
 } from 'react-native';
 
 import { Button } from '@/components/ui';
+import { WEB_URL } from '@/config/api';
 import { colors } from '@/constants/theme';
 import { useSession } from '@/context/SessionContext';
 import {
@@ -58,6 +61,21 @@ export default function SettingsScreen() {
       </View>
 
       <MyEquipmentSection />
+
+      <View style={styles.card}>
+        <Pressable
+          onPress={() => router.push('/blocked-users')}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.row, pressed && styles.serviceRowPressed]}
+        >
+          <Text style={styles.linkLabel}>ブロックしたユーザー</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </Pressable>
+      </View>
+
+      <OtherServicesSection />
+
+      <AboutSection />
 
       <Button title="ログアウト" variant="secondary" onPress={confirmSignOut} />
 
@@ -153,6 +171,86 @@ function MyEquipmentSection() {
         <AddEquipmentSheet onSaved={handleAdd} onCancel={() => setAdding(false)} />
       </Modal>
     </View>
+  );
+}
+
+// ── Scubalab のほかのサービス ─────────────────────────────────────────────────
+
+// Web版のトップページと同じ名前・説明。タップでブラウザを開く
+const OTHER_SERVICES = [
+  {
+    name: 'システムチャートボード',
+    tagline: '水中撮影機材のシステム構成を、選ぶだけで図に',
+    url: 'https://www.scubalab.net/scuba-systemchart',
+    icon: 'camera-outline',
+  },
+  {
+    name: '海の本棚',
+    tagline: 'ダイビングの本がみつかる書評プラットフォーム',
+    url: 'https://www.scubalab.net/scuba-bookshelf',
+    icon: 'book-outline',
+  },
+] as const;
+
+function OtherServicesSection() {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Scubalab のほかのサービス</Text>
+      <View style={styles.card}>
+        {OTHER_SERVICES.map((service, i) => (
+          <View key={service.url}>
+            {i > 0 ? <View style={styles.divider} /> : null}
+            <Pressable
+              onPress={() => Linking.openURL(service.url)}
+              accessibilityRole="link"
+              accessibilityLabel={`${service.name}をブラウザで開く`}
+              style={({ pressed }) => [styles.serviceRow, pressed && styles.serviceRowPressed]}
+            >
+              <View style={styles.serviceIcon}>
+                <Ionicons name={service.icon} size={20} color={colors.primary} />
+              </View>
+              <View style={styles.serviceInfo}>
+                <Text style={styles.serviceName}>{service.name}</Text>
+                <Text style={styles.serviceTagline}>{service.tagline}</Text>
+              </View>
+              <Ionicons name="open-outline" size={16} color={colors.textMuted} />
+            </Pressable>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// ── このアプリについて ──────────────────────────────────────────────────────
+
+function AboutSection() {
+  const version = Constants.expoConfig?.version ?? '-';
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>このアプリについて</Text>
+      <View style={styles.card}>
+        <InfoRow label="バージョン" value={version} />
+        <View style={styles.divider} />
+        <LinkRow label="利用規約" url={`${WEB_URL}/umi-no-ato/terms`} />
+        <View style={styles.divider} />
+        <LinkRow label="プライバシーポリシー" url={`${WEB_URL}/umi-no-ato/privacy`} />
+      </View>
+    </View>
+  );
+}
+
+function LinkRow({ label, url }: { label: string; url: string }) {
+  return (
+    <Pressable
+      onPress={() => Linking.openURL(url)}
+      accessibilityRole="link"
+      accessibilityLabel={`${label}をブラウザで開く`}
+      style={({ pressed }) => [styles.row, pressed && styles.serviceRowPressed]}
+    >
+      <Text style={styles.linkLabel}>{label}</Text>
+      <Ionicons name="open-outline" size={16} color={colors.textMuted} />
+    </Pressable>
   );
 }
 
@@ -414,6 +512,16 @@ const styles = StyleSheet.create({
   equipInfo: { flex: 1, gap: 2 },
   equipCamera: { fontSize: 14, fontWeight: '600', color: colors.text },
   equipSub: { fontSize: 12, color: colors.textSub },
+  serviceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+  serviceRowPressed: { opacity: 0.6 },
+  linkLabel: { fontSize: 14, color: colors.text },
+  serviceIcon: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: colors.primaryBg, alignItems: 'center', justifyContent: 'center',
+  },
+  serviceInfo: { flex: 1, gap: 2 },
+  serviceName: { fontSize: 14, fontWeight: '600', color: colors.text },
+  serviceTagline: { fontSize: 12, color: colors.textSub, lineHeight: 17 },
 });
 
 const addStyles = StyleSheet.create({

@@ -1,7 +1,9 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Button, Field, FormError, errorMessage } from '@/components/ui';
+import { WEB_URL } from '@/config/api';
 import { RANK_OPTIONS } from '@/constants/ranks';
 import { colors } from '@/constants/theme';
 import { useSession } from '@/context/SessionContext';
@@ -20,6 +22,8 @@ export default function RegisterScreen() {
   const [name, setName] = useState('');
   const [rank, setRank] = useState<string | null>(null);
   const [code, setCode] = useState('');
+  // 利用規約・プライバシーポリシーへの同意（App Store 審査ガイドライン 1.2）
+  const [agreed, setAgreed] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -36,6 +40,7 @@ export default function RegisterScreen() {
     if (!userId || !email || !password || !name) return 'すべての必須項目を入力してください';
     if (!/^[a-zA-Z0-9_]+$/.test(userId)) return 'ユーザーIDは半角英数字と _ のみ使用できます';
     if (password.length < 8 || password.length > 72) return 'パスワードは8〜72文字で入力してください';
+    if (!agreed) return '利用規約とプライバシーポリシーに同意してください';
     return null;
   };
 
@@ -145,8 +150,34 @@ export default function RegisterScreen() {
               </View>
             </View>
 
+            <View style={styles.agreeRow}>
+              <Pressable
+                onPress={() => setAgreed((v) => !v)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: agreed }}
+                accessibilityLabel="利用規約とプライバシーポリシーに同意する"
+                hitSlop={8}
+              >
+                <Ionicons
+                  name={agreed ? 'checkbox' : 'square-outline'}
+                  size={22}
+                  color={agreed ? colors.primary : colors.textMuted}
+                />
+              </Pressable>
+              <Text style={styles.agreeText}>
+                <Text style={styles.agreeLink} onPress={() => Linking.openURL(`${WEB_URL}/umi-no-ato/terms`)}>
+                  利用規約
+                </Text>
+                と
+                <Text style={styles.agreeLink} onPress={() => Linking.openURL(`${WEB_URL}/umi-no-ato/privacy`)}>
+                  プライバシーポリシー
+                </Text>
+                に同意する。不適切な投稿や迷惑行為は禁止されており、違反した投稿は削除されます。
+              </Text>
+            </View>
+
             <FormError message={error} />
-            <Button title="確認コードを送信する" onPress={send} loading={loading} />
+            <Button title="確認コードを送信する" onPress={send} loading={loading} disabled={!agreed} />
           </>
         ) : (
           <>
@@ -207,4 +238,7 @@ const styles = StyleSheet.create({
   rankText: { fontSize: 13, color: colors.textSub },
   rankTextSelected: { color: colors.primary, fontWeight: '600' },
   link: { color: colors.primary, textAlign: 'center', fontSize: 14, paddingVertical: 4 },
+  agreeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  agreeText: { flex: 1, fontSize: 13, color: colors.text, lineHeight: 20 },
+  agreeLink: { color: colors.primary, textDecorationLine: 'underline' },
 });
