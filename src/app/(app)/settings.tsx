@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Keyboard,
   Linking,
   Modal,
@@ -197,13 +198,13 @@ const OTHER_SERVICES = [
     name: 'システムチャートボード',
     tagline: '水中撮影機材のシステム構成を、選ぶだけで図に',
     url: 'https://www.scubalab.net/scuba-systemchart',
-    icon: 'camera-outline',
+    icon: require('../../../assets/images/service-systemchart.png'),
   },
   {
     name: '海の本棚',
     tagline: 'ダイビングの本がみつかる書評プラットフォーム',
     url: 'https://www.scubalab.net/scuba-bookshelf',
-    icon: 'book-outline',
+    icon: require('../../../assets/images/service-bookshelf.png'),
   },
 ] as const;
 
@@ -221,9 +222,7 @@ function OtherServicesSection() {
               accessibilityLabel={`${service.name}をブラウザで開く`}
               style={({ pressed }) => [styles.serviceRow, pressed && styles.serviceRowPressed]}
             >
-              <View style={styles.serviceIcon}>
-                <Ionicons name={service.icon} size={20} color={colors.primary} />
-              </View>
+              <Image source={service.icon} style={styles.serviceIcon} accessibilityIgnoresInvertColors />
               <View style={styles.serviceInfo}>
                 <Text style={styles.serviceName}>{service.name}</Text>
                 <Text style={styles.serviceTagline}>{service.tagline}</Text>
@@ -531,9 +530,10 @@ const styles = StyleSheet.create({
   serviceRowPressed: { opacity: 0.6 },
   linkLabel: { fontSize: 14, color: colors.text },
   editLabel: { fontSize: 14, color: colors.primary, fontWeight: '600', flexShrink: 1 },
+  // Web版と同じサービスのアイコン（scubalab/public/*-icon.svg を PNG にしたもの）
   serviceIcon: {
     width: 36, height: 36, borderRadius: 10,
-    backgroundColor: colors.primaryBg, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#fff', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
   },
   serviceInfo: { flex: 1, gap: 2 },
   serviceName: { fontSize: 14, fontWeight: '600', color: colors.text },
