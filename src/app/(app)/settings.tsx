@@ -62,18 +62,11 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.card}>
-        <InfoRow label="メールアドレス" value={user.email ?? '未登録'} />
+        <NavRow label="プロフィール" value={[user.name, user.rank ?? 'ランク未設定'].join(' ・ ')} href="/profile-edit" />
         <View style={styles.divider} />
-        <InfoRow label="ランク" value={user.rank ?? '未設定'} />
+        <NavRow label="メールアドレス" value={user.email ?? '未登録'} href="/email-change" />
         <View style={styles.divider} />
-        <Pressable
-          onPress={() => router.push('/profile-edit')}
-          accessibilityRole="button"
-          style={({ pressed }) => [styles.row, pressed && styles.serviceRowPressed]}
-        >
-          <Text style={styles.editLabel}>プロフィール・メールアドレス・パスワードを変更</Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-        </Pressable>
+        <NavRow label="パスワード" value="変更する" href="/password-change" />
       </View>
 
       <MyEquipmentSection />
@@ -484,6 +477,26 @@ function AddEquipmentSheet({
   );
 }
 
+// 押すと編集画面へ進む行（左に項目名、右に今の値）
+function NavRow({ label, value, href }: { label: string; value: string; href: '/profile-edit' | '/email-change' | '/password-change' }) {
+  return (
+    <Pressable
+      onPress={() => router.push(href)}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}を変更`}
+      style={({ pressed }) => [styles.row, pressed && styles.serviceRowPressed]}
+    >
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.navValue}>
+        <Text style={styles.value} numberOfLines={1}>
+          {value}
+        </Text>
+        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+      </View>
+    </Pressable>
+  );
+}
+
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.row}>
@@ -511,6 +524,7 @@ const styles = StyleSheet.create({
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
   label: { fontSize: 14, color: colors.textSub },
   value: { fontSize: 14, color: colors.text, flexShrink: 1 },
+  navValue: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
   withdraw: { alignSelf: 'center', paddingVertical: 12, paddingHorizontal: 16 },
   withdrawText: { fontSize: 14, color: colors.danger },
   section: { gap: 10 },
@@ -529,7 +543,6 @@ const styles = StyleSheet.create({
   serviceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   serviceRowPressed: { opacity: 0.6 },
   linkLabel: { fontSize: 14, color: colors.text },
-  editLabel: { fontSize: 14, color: colors.primary, fontWeight: '600', flexShrink: 1 },
   // Web版と同じサービスのアイコン（scubalab/public/*-icon.svg を PNG にしたもの）
   serviceIcon: {
     width: 36, height: 36, borderRadius: 10,
