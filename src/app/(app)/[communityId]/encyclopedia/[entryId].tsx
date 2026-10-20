@@ -23,7 +23,7 @@ import { useCommunity } from '@/context/CommunityContext';
 import { useSession } from '@/context/SessionContext';
 import { useModeration } from '@/hooks/useModeration';
 import * as api from '@/services/apiService';
-import { fetchCreatureById, fetchHousingById, fetchLensById, type CreatureDetail, type Housing, type Lens } from '@/services/supabaseService';
+import { fetchCreatureById, fetchHousingById, fetchLensById, searchCreatures, type CreatureDetail, type Housing, type Lens } from '@/services/supabaseService';
 import type { EncyclopediaEntryDetail, EncyclopediaPhoto, Tag } from '@/types';
 import EquipmentSheet, { type EquipmentParams } from '@/components/EquipmentSheet';
 import { parseExifCamera } from '@/utils/exif';
@@ -69,7 +69,16 @@ export default function EncyclopediaEntryScreen() {
       setIndex((i) => Math.min(i, Math.max(0, e.photos.length - 1)));
       setError(null);
       // 生き物辞書の情報は失敗しても図鑑の表示には影響させない
-      if (e.creature_id) fetchCreatureById(e.creature_id).then(setCreature).catch(() => {});
+      // creature_id がない場合は和名で検索してフォールバック（写真詳細画面と同じ挙動）
+      if (e.creature_id) {
+        fetchCreatureById(e.creature_id).then(setCreature).catch(() => {});
+      } else if (e.japanese_name && e.japanese_name.length >= 2 && e.japanese_name !== '未同定') {
+        searchCreatures(e.japanese_name).then(async (results) => {
+          if (!results.length) return;
+          const match = results.find((r) => r.name === e.japanese_name) ?? results[0];
+          fetchCreatureById(match.id).then(setCreature).catch(() => {});
+        }).catch(() => {});
+      }
     } catch (err) {
       if (handleApiError(err)) return;
       if (err instanceof api.ApiError && err.status === 404) {
