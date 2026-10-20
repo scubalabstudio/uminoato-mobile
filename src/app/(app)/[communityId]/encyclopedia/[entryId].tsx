@@ -21,6 +21,7 @@ import { canEditEncyclopedia } from '@/constants/roles';
 import { colors } from '@/constants/theme';
 import { useCommunity } from '@/context/CommunityContext';
 import { useSession } from '@/context/SessionContext';
+import { useModeration } from '@/hooks/useModeration';
 import * as api from '@/services/apiService';
 import { fetchCreatureById, fetchHousingById, fetchLensById, type CreatureDetail, type Housing, type Lens } from '@/services/supabaseService';
 import type { EncyclopediaEntryDetail, EncyclopediaPhoto, Tag } from '@/types';
@@ -36,8 +37,9 @@ export default function EncyclopediaEntryScreen() {
   const params = useLocalSearchParams<{ communityId: string; entryId: string; name?: string }>();
   const communityId = Number(params.communityId);
   const entryId = Number(params.entryId);
-  const { handleApiError } = useSession();
+  const { user, handleApiError } = useSession();
   const { communities, reload } = useCommunity();
+  const moderation = useModeration();
   const canEdit = canEditEncyclopedia(communities.find((c) => c.id === communityId)?.role);
 
   const [entry, setEntry] = useState<EncyclopediaEntryDetail | null>(null);
@@ -178,8 +180,22 @@ export default function EncyclopediaEntryScreen() {
 
   const photo = entry.photos[index] ?? null;
 
+  // 他の人の写真は通報・投稿者のブロックができる。ブロックするとその人の写真が消えるので読み直す
+  const openModeration = (p: EncyclopediaPhoto) => {
+    moderation.openMenu({
+      title: 'この写真について',
+      report: { type: 'encyclopedia_photo', id: p.id, communityId, label: 'この写真' },
+      user: p.uploader_id && p.uploader_name ? { id: p.uploader_id, name: p.uploader_name } : null,
+      onBlocked: () => {
+        markEncyclopediaStale();
+        load();
+      },
+    });
+  };
+
   return (
     <>
+    {moderation.element}
     <Modal
       visible={pendingAsset !== null}
       animationType="slide"
@@ -259,6 +275,17 @@ export default function EncyclopediaEntryScreen() {
               ) : (
                 <Ionicons name="trash-outline" size={20} color={colors.danger} />
               )}
+            </Pressable>
+          ) : null}
+          {photo.uploader_id !== user?.id ? (
+            <Pressable
+              onPress={() => openModeration(photo)}
+              accessibilityRole="button"
+              accessibilityLabel="通報・ブロック"
+              hitSlop={8}
+              style={styles.deleteButton}
+            >
+              <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSub} />
             </Pressable>
           ) : null}
         </View>

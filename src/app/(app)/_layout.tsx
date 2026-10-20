@@ -20,6 +20,7 @@ function AppLayoutInner() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="settings" options={{ title: '設定' }} />
       <Stack.Screen name="withdraw" options={{ title: '退会' }} />
+      <Stack.Screen name="blocked-users" options={{ title: 'ブロックしたユーザー' }} />
       <Stack.Screen name="[communityId]/events/new" options={{ title: '新規イベント作成' }} />
       <Stack.Screen name="[communityId]/events/[eventId]" options={{ title: '' }} />
       <Stack.Screen name="[communityId]/events/[eventId]/edit" options={{ title: 'イベントを編集' }} />

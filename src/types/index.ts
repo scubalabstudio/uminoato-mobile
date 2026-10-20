@@ -40,6 +40,7 @@ export interface Community {
 export interface CommunityMember {
   id: number; // community_members.id（ロール変更・除籍で使う）
   user_id: string; // 表示用のユーザーID（users.user_id）
+  account_id: number; // users.id（通報・ブロックで使う）
   name: string;
   role: string;
   is_me: boolean;
@@ -133,6 +134,7 @@ export interface EventMember {
 export interface EventPhoto {
   id: number;
   uploader_name: string | null;
+  uploader_id: number | null; // 通報・ブロックの対象（退会済みなら null）
   is_mine: boolean;
   is_diving_photo: boolean;
   dive_sort_order: number | null;
@@ -198,6 +200,7 @@ export interface EncyclopediaPhoto {
   point_name: string | null;
   point_id: number | null;
   uploader_name: string | null;
+  uploader_id: number | null; // 通報・ブロックの対象（退会済みなら null）
 }
 
 export interface EncyclopediaEntryDetail extends EncyclopediaEntry {
@@ -212,6 +215,7 @@ export interface UnidentifiedPhoto {
   event_id: number;
   event_name: string | null;
   uploader_name: string | null;
+  uploader_id: number | null; // 通報・ブロックの対象（退会済みなら null）
   japanese_name: string | null;
   scientific_name: string | null;
   creature_id: number | null;
@@ -219,4 +223,17 @@ export interface UnidentifiedPhoto {
   display_url: string;
   thumbnail_url: string;
   uploaded_at: string;
+}
+
+// ── 通報・ブロック ───────────────────────────────────────────────────────────
+
+export type ReportTargetType = 'event_photo' | 'encyclopedia_photo' | 'user';
+
+export type ReportReason = 'inappropriate' | 'harassment' | 'spam' | 'rights' | 'other';
+
+export interface BlockedUser {
+  user_id: number; // users.id
+  login_id: string; // 表示用のユーザーID
+  name: string;
+  blocked_at: string;
 }

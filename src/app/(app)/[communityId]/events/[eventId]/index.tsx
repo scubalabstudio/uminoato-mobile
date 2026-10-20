@@ -24,6 +24,7 @@ import { isOwner } from '@/constants/roles';
 import { colors } from '@/constants/theme';
 import { useCommunity } from '@/context/CommunityContext';
 import { useSession } from '@/context/SessionContext';
+import { useModeration } from '@/hooks/useModeration';
 import * as api from '@/services/apiService';
 import {
   type Camera, type Housing, type Lens,
@@ -58,6 +59,7 @@ export default function EventDetailScreen() {
   const [removingId, setRemovingId] = useState<number | null>(null);
   const [pushingId, setPushingId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'photos' | 'dive' | 'members' | 'report'>('photos');
+  const moderation = useModeration();
   const { width: screenWidth } = useWindowDimensions();
 
   const load = useCallback(async () => {
@@ -297,6 +299,24 @@ export default function EventDetailScreen() {
   const canEdit = event.member_status === 'organizer' || (event.member_status === 'accepted' && event.members_can_edit);
   // 削除は主催者かコミュニティ管理者（終了後もできる）
   const canDelete = isOrganizer || isOwner(communities.find((c) => c.id === communityId)?.role);
+  // 主催者の行（名前の表示は organizer_name、通報・ブロックの対象はこの行の user_id）
+  const organizerMember = event.members.find((m) => m.status === 'organizer') ?? null;
+
+  // メンバーをタップしたときのメニュー。主催者は開催中ならイベントから外せる。誰でも通報・ブロックできる
+  const openMember = (m: EventMember) => {
+    const name = m.name ?? '退会したユーザー';
+    const canRemove = isOrganizer && isOpen && m.status !== 'organizer';
+    moderation.openMenu({
+      title: name,
+      report: { type: 'user', id: m.user_id, communityId, label: `${name}さん` },
+      user: m.name ? { id: m.user_id, name: m.name } : null,
+      extraOptions: canRemove
+        ? [{ label: 'イベントから外す', icon: 'person-remove-outline', destructive: true, onPress: () => removeMember(m) }]
+        : [],
+      // ブロックした人の写真を一覧から消すため読み直す
+      onBlocked: () => load(),
+    });
+  };
 
   const headerRight = isOrganizer ? () => (
     <Pressable
@@ -319,6 +339,7 @@ export default function EventDetailScreen() {
 
   return (
     <>
+    {moderation.element}
     <ScrollView
       contentContainerStyle={styles.container}
       contentInsetAdjustmentBehavior="automatic"
@@ -485,9 +506,10 @@ export default function EventDetailScreen() {
           ) : null}
           <MemberChips
             organizer={event.organizer_name}
+            organizerMember={organizerMember}
             accepted={accepted}
             invited={invitedMembers}
-            onRemove={isOrganizer && isOpen ? removeMember : undefined}
+            onOpen={openMember}
             removingId={removingId}
           />
           {(isOrganizer && isOpen) || canDelete ? (
@@ -949,49 +971,56 @@ function SectionBlock({
 
 function MemberChips({
   organizer,
+  organizerMember,
   accepted,
   invited,
-  onRemove,
+  onOpen,
   removingId,
 }: {
   organizer: string | null;
+  organizerMember: EventMember | null;
   accepted: EventMember[];
   invited: EventMember[];
-  onRemove?: (member: EventMember) => void;
+  // 自分以外のメンバーをタップしたとき（外す・通報・ブロックのメニュー）
+  onOpen: (member: EventMember) => void;
   removingId?: number | null;
 }) {
-  // 自分（主催者）以外を外せる。外せるチップには × を付ける
-  const remove = (m: EventMember) => (onRemove && !m.is_me ? () => onRemove(m) : undefined);
+  const open = (m: EventMember | null) => (m && !m.is_me ? () => onOpen(m) : undefined);
   return (
     <View style={styles.chipsWrap}>
-      <Chip name={organizer ?? '退会したユーザー'} role="主催" isMe={false} />
+      <Chip
+        name={organizer ?? '退会したユーザー'}
+        role="主催"
+        isMe={organizerMember?.is_me ?? false}
+        onPress={open(organizerMember)}
+      />
       {accepted.map((m) => (
-        <Chip key={m.id} name={m.name ?? '退会したユーザー'} isMe={m.is_me} onRemove={remove(m)} removing={removingId === m.id} />
+        <Chip key={m.id} name={m.name ?? '退会したユーザー'} isMe={m.is_me} onPress={open(m)} removing={removingId === m.id} />
       ))}
       {invited.map((m) => (
-        <Chip key={m.id} name={m.name ?? '退会したユーザー'} isMe={m.is_me} pending onRemove={remove(m)} removing={removingId === m.id} />
+        <Chip key={m.id} name={m.name ?? '退会したユーザー'} isMe={m.is_me} pending onPress={open(m)} removing={removingId === m.id} />
       ))}
     </View>
   );
 }
 
 function Chip({
-  name, role, isMe, pending, onRemove, removing,
+  name, role, isMe, pending, onPress, removing,
 }: {
   name: string;
   role?: string;
   isMe: boolean;
   pending?: boolean;
-  onRemove?: () => void;
+  onPress?: () => void;
   removing?: boolean;
 }) {
   return (
     <Pressable
-      onPress={onRemove}
-      disabled={!onRemove || removing}
-      accessibilityRole={onRemove ? 'button' : undefined}
-      accessibilityHint={onRemove ? 'イベントから外す' : undefined}
-      style={[styles.chip, pending && styles.chipPending, onRemove && styles.chipRemovable]}
+      onPress={onPress}
+      disabled={!onPress || removing}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityHint={onPress ? 'メニューを開く' : undefined}
+      style={[styles.chip, pending && styles.chipPending, onPress && styles.chipRemovable]}
     >
       <Text style={[styles.chipText, pending && styles.chipTextPending]} numberOfLines={1}>
         {isMe ? `${name}（あなた）` : name}
@@ -999,8 +1028,8 @@ function Chip({
       </Text>
       {removing ? (
         <ActivityIndicator size="small" color={colors.textSub} />
-      ) : onRemove ? (
-        <Ionicons name="close" size={14} color={colors.textSub} />
+      ) : onPress ? (
+        <Ionicons name="ellipsis-horizontal" size={14} color={colors.textSub} />
       ) : null}
     </Pressable>
   );
@@ -1099,6 +1128,7 @@ function PhotoGrid({
                   `ename=${encodeURIComponent(eventName)}`,
                   `canpush=${canpush}`,
                   `dl=${canDownload ? 1 : 0}`,
+                  `uid=${photo.uploader_id ?? ''}`,
                   `pushed_enc=${photo.pushed_to_encyclopedia ? 1 : 0}`,
                   `pushed_com=${photo.pushed_to_community ? 1 : 0}`,
                   `species_enc=${photo.species_in_encyclopedia ? 1 : 0}`,

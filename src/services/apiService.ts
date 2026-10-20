@@ -3,6 +3,7 @@ import { File, Paths } from 'expo-file-system';
 import { BACKEND_URL } from '../config/api';
 import { clearCredentials, getAccessToken } from './authService';
 import {
+  BlockedUser,
   Community,
   CommunityEvent,
   CommunityEventDetail,
@@ -19,6 +20,8 @@ import {
   MyInvitation,
   MyInvitedEvent,
   PageMeta,
+  ReportReason,
+  ReportTargetType,
   Tag,
   UnidentifiedPhoto,
   User,
@@ -766,4 +769,31 @@ export async function identifyPhoto(
     { method: 'PATCH', body: JSON.stringify(params) },
   );
   return res.photo;
+}
+
+// ── 通報・ブロック（App Store 審査ガイドライン 1.2） ─────────────────────────
+
+// 不適切な写真・ユーザーを運営者に通報する。同じ対象を重ねて通報しても1件にまとまる
+export async function reportContent(params: {
+  target_type: ReportTargetType;
+  target_id: number;
+  reason: ReportReason;
+  detail?: string | null;
+  community_id?: number | null;
+}): Promise<void> {
+  await request('reports', { method: 'POST', body: JSON.stringify(params) });
+}
+
+export async function fetchBlockedUsers(): Promise<BlockedUser[]> {
+  const res = await request<{ blocks: BlockedUser[] }>('blocks');
+  return res.blocks;
+}
+
+// ブロックすると相手の写真が表示されなくなり、相手から招待されなくなる。相手には知らされない
+export async function blockUser(userId: number): Promise<void> {
+  await request('blocks', { method: 'POST', body: JSON.stringify({ user_id: userId }) });
+}
+
+export async function unblockUser(userId: number): Promise<void> {
+  await request(`blocks/${userId}`, { method: 'DELETE' });
 }

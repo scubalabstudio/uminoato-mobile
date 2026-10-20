@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { File } from 'expo-file-system';
 import { Asset, requestPermissionsAsync } from 'expo-media-library';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -20,6 +20,7 @@ import {
 import { errorMessage } from '@/components/ui';
 import { colors } from '@/constants/theme';
 import { useSession } from '@/context/SessionContext';
+import { useModeration } from '@/hooks/useModeration';
 import * as api from '@/services/apiService';
 import { fetchCreatureById, fetchHousingById, fetchLensById, searchCreatures, type CreatureDetail, type Housing, type Lens } from '@/services/supabaseService';
 import type { EventPhoto } from '@/types';
@@ -40,7 +41,7 @@ export default function PhotoDetailScreen() {
     dso?: string; dives?: string; ename?: string;
     canpush?: string; pushed_enc?: string; pushed_com?: string; species_enc?: string;
     cam_make?: string; cam_model?: string; housing_id?: string; lens_id?: string;
-    dl?: string;
+    dl?: string; uid?: string;
   }>();
 
   const communityId = Number(params.communityId);
@@ -53,6 +54,7 @@ export default function PhotoDetailScreen() {
   const canPushInitial = params.canpush === '1';
   // イベントの参加者（主催者・参加受諾済み）だけが端末に保存できる
   const canDownload = params.dl === '1';
+  const moderation = useModeration();
   const initPushedEnc = params.pushed_enc === '1';
   const initPushedCom = params.pushed_com === '1';
 
@@ -248,7 +250,6 @@ export default function PhotoDetailScreen() {
         text: '削除', style: 'destructive', onPress: async () => {
           try {
             await api.deleteEventPhoto(communityId, eventId, photoId);
-            const { router } = await import('expo-router');
             router.back();
           } catch (e) {
             handleApiError(e);
@@ -261,9 +262,22 @@ export default function PhotoDetailScreen() {
   const displayUrl = photo?.display_url ?? initUrl ?? '';
   const isDiving = photo ? photo.is_diving_photo : initDiving;
   const uploaderName = photo ? photo.uploader_name : initUploader;
+  const uploaderId = photo ? photo.uploader_id : params.uid ? Number(params.uid) : null;
+  const mine = photo ? photo.is_mine : isMine;
+
+  // 他の人の写真は通報・投稿者のブロックができる
+  const openModeration = () => {
+    moderation.openMenu({
+      title: 'この写真について',
+      report: { type: 'event_photo', id: photoId, communityId, label: 'この写真' },
+      user: uploaderId && uploaderName ? { id: uploaderId, name: uploaderName } : null,
+      // ブロックした人の写真は表示しないので、写真の一覧に戻る（一覧は戻ったときに読み直される）
+      onBlocked: () => router.back(),
+    });
+  };
   const title = params.ename ? decodeURIComponent(params.ename) : '写真';
 
-  const headerRight = canEdit || canDownload ? () => (
+  const headerRight = canEdit || canDownload || !mine ? () => (
     <View style={styles.headerActions}>
       {canDownload ? (
         downloading ? (
@@ -279,6 +293,11 @@ export default function PhotoDetailScreen() {
       {canEdit ? (
         <Pressable style={styles.headerBtn} onPress={openEdit} accessibilityRole="button" accessibilityLabel="写真を編集">
           <Ionicons name="create-outline" size={22} color={colors.primary} />
+        </Pressable>
+      ) : null}
+      {!mine ? (
+        <Pressable style={styles.headerBtn} onPress={openModeration} accessibilityRole="button" accessibilityLabel="通報・ブロック">
+          <Ionicons name="ellipsis-horizontal" size={22} color={colors.primary} />
         </Pressable>
       ) : null}
     </View>
@@ -304,6 +323,7 @@ export default function PhotoDetailScreen() {
 
   return (
     <>
+      {moderation.element}
       <ScrollView contentContainerStyle={styles.container} contentInsetAdjustmentBehavior="automatic">
         <Stack.Screen options={{ title, headerRight }} />
 

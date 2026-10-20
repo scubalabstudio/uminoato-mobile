@@ -21,6 +21,7 @@ import { canEditEncyclopedia } from '@/constants/roles';
 import { colors } from '@/constants/theme';
 import { useCommunity } from '@/context/CommunityContext';
 import { useSession } from '@/context/SessionContext';
+import { useModeration } from '@/hooks/useModeration';
 import * as api from '@/services/apiService';
 import { searchCreatures } from '@/services/supabaseService';
 import type { UnidentifiedPhoto } from '@/types';
@@ -129,6 +130,14 @@ function UnidentifiedList({ communityId, canEdit }: { communityId: number; canEd
     setTotal((n) => (n === null ? n : Math.max(0, n - 1)));
   };
 
+  // ブロックした人の写真は一覧から外し、画面を閉じる
+  const onBlocked = (userId: number) => {
+    const removed = photos.filter((p) => p.uploader_id === userId).length;
+    setPhotos((list) => list.filter((p) => p.uploader_id !== userId));
+    setTotal((n) => (n === null ? n : Math.max(0, n - removed)));
+    setSelected(null);
+  };
+
   const header = (
     <Text style={styles.lead}>
       {canEdit
@@ -195,6 +204,7 @@ function UnidentifiedList({ communityId, canEdit }: { communityId: number; canEd
             canEdit={canEdit}
             onClose={() => setSelected(null)}
             onIdentified={onIdentified}
+            onBlocked={onBlocked}
           />
         ) : null}
       </Modal>
@@ -208,14 +218,26 @@ function PhotoSheet({
   canEdit,
   onClose,
   onIdentified,
+  onBlocked,
 }: {
   communityId: number;
   photo: UnidentifiedPhoto;
   canEdit: boolean;
   onClose: () => void;
   onIdentified: (photo: UnidentifiedPhoto) => void;
+  onBlocked: (userId: number) => void;
 }) {
-  const { handleApiError } = useSession();
+  const { user, handleApiError } = useSession();
+  // このシートはモーダルの中なので、メニューもこの中に置く（iOS は外のモーダルを重ねられない）
+  const moderation = useModeration();
+  const openModeration = () => {
+    moderation.openMenu({
+      title: 'この写真について',
+      report: { type: 'event_photo', id: photo.id, communityId, label: 'この写真' },
+      user: photo.uploader_id && photo.uploader_name ? { id: photo.uploader_id, name: photo.uploader_name } : null,
+      onBlocked,
+    });
+  };
   const { reload } = useCommunity();
   const { width } = useWindowDimensions();
   const [japaneseName, setJapaneseName] = useState('');
@@ -296,11 +318,19 @@ function PhotoSheet({
 
   return (
     <View style={styles.sheet}>
+      {moderation.element}
       <View style={styles.sheetHeader}>
         <Text style={styles.sheetTitle}>未同定の写真</Text>
-        <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="閉じる" hitSlop={12}>
-          <Ionicons name="close" size={24} color={colors.text} />
-        </Pressable>
+        <View style={styles.sheetActions}>
+          {photo.uploader_id !== user?.id ? (
+            <Pressable onPress={openModeration} accessibilityRole="button" accessibilityLabel="通報・ブロック" hitSlop={12}>
+              <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
+            </Pressable>
+          ) : null}
+          <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="閉じる" hitSlop={12}>
+            <Ionicons name="close" size={24} color={colors.text} />
+          </Pressable>
+        </View>
       </View>
       <ScrollView
         contentContainerStyle={styles.sheetBody}
@@ -420,6 +450,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
   },
   sheetTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  sheetActions: { flexDirection: 'row', alignItems: 'center', gap: 20 },
   sheetBody: { padding: PADDING, gap: 16, paddingBottom: 48 },
   photo: { width: '100%', borderRadius: 12, backgroundColor: '#000' },
   meta: { gap: 4 },
