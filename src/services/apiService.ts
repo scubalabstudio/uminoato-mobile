@@ -160,6 +160,26 @@ export async function verifyRegisterCode(
 }
 
 // GET /auth/me は { user } ではなく user をそのまま返す
+// 表示名・ランクの変更。メールアドレスは、未登録の人が初めて設定するときだけここで変えられる
+export async function updateProfile(params: { name: string; rank: string | null; email?: string }): Promise<User> {
+  const res = await request<{ user: User }>('auth/profile', { method: 'PUT', body: JSON.stringify(params) });
+  return res.user;
+}
+
+// ログイン中のパスワード変更。この端末のログインは残り、ほかの端末は失効する
+export async function changePassword(params: {
+  current_password: string;
+  password: string;
+  password_confirmation: string;
+}): Promise<void> {
+  await request('auth/password', { method: 'PUT', body: JSON.stringify(params) });
+}
+
+// 登録済みのメールアドレスの変更。新しいアドレスに確認メールが届き、そのリンク（Web版）を開くと変わる
+export async function requestEmailChange(newEmail: string): Promise<void> {
+  await request('auth/email/request', { method: 'POST', body: JSON.stringify({ new_email: newEmail }) });
+}
+
 export async function fetchMe(): Promise<User> {
   return request<User>('auth/me');
 }

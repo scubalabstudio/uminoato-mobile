@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
-import { router } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -37,7 +37,13 @@ import {
 } from '@/services/myEquipmentService';
 
 export default function SettingsScreen() {
-  const { user, signOut } = useSession();
+  const { user, signOut, refreshUser } = useSession();
+  // Web版でメールアドレスの変更を確認して戻ってきたときなどに、最新の情報にする
+  useFocusEffect(
+    useCallback(() => {
+      refreshUser();
+    }, [refreshUser]),
+  );
   if (!user) return null;
 
   const confirmSignOut = () => {
@@ -58,6 +64,15 @@ export default function SettingsScreen() {
         <InfoRow label="メールアドレス" value={user.email ?? '未登録'} />
         <View style={styles.divider} />
         <InfoRow label="ランク" value={user.rank ?? '未設定'} />
+        <View style={styles.divider} />
+        <Pressable
+          onPress={() => router.push('/profile-edit')}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.row, pressed && styles.serviceRowPressed]}
+        >
+          <Text style={styles.editLabel}>プロフィール・メールアドレス・パスワードを変更</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </Pressable>
       </View>
 
       <MyEquipmentSection />
@@ -515,6 +530,7 @@ const styles = StyleSheet.create({
   serviceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   serviceRowPressed: { opacity: 0.6 },
   linkLabel: { fontSize: 14, color: colors.text },
+  editLabel: { fontSize: 14, color: colors.primary, fontWeight: '600', flexShrink: 1 },
   serviceIcon: {
     width: 36, height: 36, borderRadius: 10,
     backgroundColor: colors.primaryBg, alignItems: 'center', justifyContent: 'center',

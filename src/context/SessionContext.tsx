@@ -15,6 +15,10 @@ interface SessionValue {
   signOut: () => Promise<void>;
   // 退会。成功するとログイン画面に戻る。失敗（パスワード違い・オーナーで退会できない等）は ApiError を投げる
   deleteAccount: (password: string) => Promise<void>;
+  // プロフィール（表示名・ランク・未登録の場合のメールアドレス）を変更し、端末の保存情報も更新する
+  updateProfile: (params: { name: string; rank: string | null; email?: string }) => Promise<void>;
+  // サーバーから最新のユーザー情報を取り直す（Web版でメールアドレスの変更を確認した後など）
+  refreshUser: () => Promise<void>;
   // 401 なら「ログインの有効期限が切れました」を出してログアウトし、true を返す（Web版の useApiErrorHandler と同じ扱い）
   handleApiError: (e: unknown) => boolean;
 }
@@ -80,6 +84,27 @@ export function SessionProvider({ children }: PropsWithChildren) {
     setUser(null);
   }, []);
 
+  const applyUser = useCallback(async (next: User) => {
+    const token = await getAccessToken();
+    if (token) await saveCredentials(token, next);
+    setUser(next);
+  }, []);
+
+  const updateProfile = useCallback(
+    async (params: { name: string; rank: string | null; email?: string }) => {
+      await applyUser(await api.updateProfile(params));
+    },
+    [applyUser],
+  );
+
+  const refreshUser = useCallback(async () => {
+    try {
+      await applyUser(await api.fetchMe());
+    } catch {
+      // 圏外などは今の表示のまま
+    }
+  }, [applyUser]);
+
   const deleteAccount = useCallback(async (password: string) => {
     await api.deleteAccount(password);
     setUser(null);
@@ -93,8 +118,8 @@ export function SessionProvider({ children }: PropsWithChildren) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, isLoading, signIn, completeRegistration, signOut, deleteAccount, handleApiError }),
-    [user, isLoading, signIn, completeRegistration, signOut, deleteAccount, handleApiError],
+    () => ({ user, isLoading, signIn, completeRegistration, signOut, deleteAccount, updateProfile, refreshUser, handleApiError }),
+    [user, isLoading, signIn, completeRegistration, signOut, deleteAccount, updateProfile, refreshUser, handleApiError],
   );
 
   return <SessionContext value={value}>{children}</SessionContext>;
