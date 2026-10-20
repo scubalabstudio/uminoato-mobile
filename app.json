@@ -8,9 +8,9 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.toruko83.uminoato",
-      "associatedDomains": ["applinks:scubalab.vercel.app"]
+      "associatedDomains": ["applinks:www.scubalab.net"]
     },
     "android": {
       "package": "com.toruko83.uminoato",
@@ -33,7 +33,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "scubalab.vercel.app",
+              "host": "www.scubalab.net",
               "pathPrefix": "/umi-no-ato"
             }
           ],

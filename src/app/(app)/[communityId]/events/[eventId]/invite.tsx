@@ -18,12 +18,11 @@ import {
 
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { errorMessage } from '@/components/ui';
+import { WEB_URL } from '@/config/api';
 import { colors } from '@/constants/theme';
 import { useSession } from '@/context/SessionContext';
 import * as api from '@/services/apiService';
 import type { EventMember, EventUserSearchResult } from '@/types';
-
-const WEB_BASE = 'https://scubalab.net';
 
 const STATUS_ORDER: Record<string, number> = {
   organizer: 0,
@@ -72,7 +71,7 @@ export default function InviteScreen() {
   const [error, setError] = useState<string | null>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const publicUrl = `${WEB_BASE}/umi-no-ato/${communityId}/events/${eventId}`;
+  const publicUrl = `${WEB_URL}/umi-no-ato/${communityId}/events/${eventId}`;
 
   const loadMembers = useCallback(async (silent = false) => {
     if (!silent) setLoadingMembers(true);

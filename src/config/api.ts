@@ -3,4 +3,4 @@
 export const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'https://api.scubalab.net';
 
 // アプリ内に画面を持たない機能（パスワード再設定など）は Web 版を開く
-export const WEB_URL = 'https://scubalab.net';
+export const WEB_URL = 'https://www.scubalab.net';
