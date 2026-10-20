@@ -1,6 +1,6 @@
-import NetInfo from '@react-native-community/netinfo';
+import * as Network from 'expo-network';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text } from 'react-native';
+import { Animated, AppState, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -14,11 +14,16 @@ export function OfflineBanner() {
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      setIsOffline(state.isConnected === false);
+    const check = async () => {
+      const state = await Network.getNetworkStateAsync();
+      setIsOffline(state.isConnected === false || state.isInternetReachable === false);
       setChecked(true);
+    };
+    check();
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') check();
     });
-    return unsubscribe;
+    return () => sub.remove();
   }, []);
 
   useEffect(() => {
