@@ -34,7 +34,17 @@
             {
               "scheme": "https",
               "host": "www.scubalab.net",
-              "pathPrefix": "/umi-no-ato"
+              "pathPattern": "/umi-no-ato/.*/events/.*"
+            },
+            {
+              "scheme": "https",
+              "host": "www.scubalab.net",
+              "pathPrefix": "/umi-no-ato/public/"
+            },
+            {
+              "scheme": "https",
+              "host": "www.scubalab.net",
+              "pathPrefix": "/umi-no-ato/invite/"
             }
           ],
           "category": ["BROWSABLE", "DEFAULT"]

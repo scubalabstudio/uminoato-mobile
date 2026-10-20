@@ -74,7 +74,7 @@ export default function PublicEncyclopediaScreen() {
 
   const goEntry = (entry: EncyclopediaEntry) =>
     router.push({
-      pathname: '/umi-no-ato/[communityId]/encyclopedia/[entryId]',
+      pathname: '/umi-no-ato/public/[communityId]/encyclopedia/[entryId]',
       params: { communityId, entryId: String(entry.id), name: entry.japanese_name },
     } as never);
 

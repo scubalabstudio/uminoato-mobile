@@ -308,6 +308,17 @@ export async function declineInvitation(invitationId: number): Promise<void> {
   await request(`invitations/${invitationId}/decline`, { method: 'POST' });
 }
 
+// 招待リンク（/umi-no-ato/invite/{token}）の中身。無効・期限切れなら ApiError
+export type ResolvedInviteLink = { community_id: number; community_name: string; already_member: boolean };
+
+export async function resolveInviteLink(inviteToken: string): Promise<ResolvedInviteLink> {
+  return request<ResolvedInviteLink>(`invite/${encodeURIComponent(inviteToken)}`);
+}
+
+export async function joinByInviteLink(inviteToken: string): Promise<{ community_id: number }> {
+  return request<{ community_id: number }>(`invite/${encodeURIComponent(inviteToken)}/join`, { method: 'POST' });
+}
+
 export async function fetchMyInvitedEvents(): Promise<MyInvitedEvent[]> {
   const res = await request<{ events: MyInvitedEvent[] }>('my-events');
   return res.events;
