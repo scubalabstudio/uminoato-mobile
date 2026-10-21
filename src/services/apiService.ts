@@ -44,7 +44,10 @@ export class UnauthorizedError extends ApiError {
 function errorMessage(body: unknown, status: number): string {
   const b = body as { message?: string; errors?: Record<string, string[]> } | null;
   const firstError = b?.errors ? Object.values(b.errors)[0]?.[0] : undefined;
-  return firstError ?? b?.message ?? `エラーが発生しました (${status})`;
+  if (firstError ?? b?.message) return (firstError ?? b?.message)!;
+  // 回数制限（サーバーはふつう日本語のメッセージを返すが、途中の機器が返したときのため）
+  if (status === 429) return 'リクエストが多すぎます。しばらくしてから再度お試しください';
+  return `エラーが発生しました (${status})`;
 }
 
 async function request<T>(
