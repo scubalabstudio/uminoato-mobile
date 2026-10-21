@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -21,6 +22,8 @@ import type { EncyclopediaEntry } from '@/types';
 export default function PublicEncyclopediaScreen() {
   const { communityId, name } = useLocalSearchParams<{ communityId: string; name?: string }>();
   const cid = Number(communityId);
+  const { width: screenWidth } = useWindowDimensions();
+  const cardWidth = (screenWidth - 12 * 2 - CARD_GAP) / 2;
 
   const [entries, setEntries] = useState<EncyclopediaEntry[]>([]);
   const [total, setTotal] = useState(0);
@@ -153,7 +156,7 @@ export default function PublicEncyclopediaScreen() {
             </View>
           }
           renderItem={({ item }) => (
-            <Pressable style={styles.card} onPress={() => goEntry(item)}>
+            <Pressable style={[styles.card, { width: cardWidth }]} onPress={() => goEntry(item)}>
               {item.thumbnail_url ? (
                 <Image source={{ uri: item.thumbnail_url }} style={styles.thumb} resizeMode="cover" />
               ) : (
@@ -217,7 +220,6 @@ const styles = StyleSheet.create({
   footer: { paddingVertical: 16 },
 
   card: {
-    flex: 1,
     backgroundColor: colors.card,
     borderRadius: 10,
     overflow: 'hidden',
