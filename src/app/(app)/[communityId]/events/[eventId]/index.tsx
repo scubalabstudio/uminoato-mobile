@@ -32,6 +32,7 @@ import {
   matchCameraByExif, searchCameras, searchCreatures,
 } from '@/services/supabaseService';
 import { addToHistory } from '@/services/browsingHistoryService';
+import { useUpload, type UploadAsset, type UploadMeta } from '@/context/UploadContext';
 import {
   equipmentSetLabel,
   loadMyEquipment,
@@ -53,8 +54,11 @@ export default function EventDetailScreen() {
   const [notFound, setNotFound] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [responding, setResponding] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [pendingUpload, setPendingUpload] = useState<{ uri: string; mimeType: string; ext: string; exifMake: string | null; exifModel: string | null } | null>(null);
+  // まとめてアップロードはアプリ全体で持つ（画面を閉じても続く）。このイベントのものなら写真タブに進み具合を出す
+  const { job: uploadJob, startUpload, onPhotoUploaded } = useUpload();
+  const uploadProgress = uploadJob && uploadJob.eventId === eventId && !uploadJob.finished ? uploadJob : null;
+  const uploading = uploadJob !== null && !uploadJob.finished;
+  const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null);
   const [managing, setManaging] = useState<'close' | 'delete' | null>(null);
   const [removingId, setRemovingId] = useState<number | null>(null);
   const [pushingId, setPushingId] = useState<number | null>(null);
@@ -76,6 +80,14 @@ export default function EventDetailScreen() {
       }
     }
   }, [communityId, eventId, handleApiError]);
+
+  // このイベントに写真が1枚上がるたびに読み直し、すぐ並べる
+  useEffect(
+    () => onPhotoUploaded((id) => {
+      if (id === eventId) load();
+    }),
+    [onPhotoUploaded, eventId, load],
+  );
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -109,46 +121,36 @@ export default function EventDetailScreen() {
     setResponding(false);
   };
 
+  // Web版と同じく、複数枚を選んで情報を一度だけ入力し、1枚ずつ順に送る
   const pickAndUpload = async () => {
+    if (uploading) {
+      Alert.alert('ほかの写真をアップロード中です', '終わってから、もう一度お試しください。');
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'] as ImagePicker.MediaType[],
       quality: 0.85,
       exif: true,
+      allowsMultipleSelection: true,
+      selectionLimit: MAX_UPLOAD_PHOTOS,
+      orderedSelection: true,
     });
-    if (result.canceled || !result.assets[0]) return;
-    const asset = result.assets[0];
-    const mimeType = asset.mimeType ?? 'image/jpeg';
-    const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') ?? 'jpg';
-    const { make: exifMake, model: exifModel } = parseExifCamera(asset.exif);
-    setPendingUpload({ uri: asset.uri, mimeType, ext, exifMake, exifModel });
+    if (result.canceled || result.assets.length === 0) return;
+    const assets = result.assets.map((asset) => {
+      const mimeType = asset.mimeType ?? 'image/jpeg';
+      const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') ?? 'jpg';
+      return { uri: asset.uri, mimeType, ext };
+    });
+    // カメラの自動入力は1枚目の EXIF から
+    const { make: exifMake, model: exifModel } = parseExifCamera(result.assets[0].exif);
+    setPendingUpload({ assets, exifMake, exifModel });
   };
 
-  const doUpload = async (params: UploadSubmitParams) => {
-    if (!pendingUpload) return;
-    const { uri, mimeType, ext } = pendingUpload;
+  const doUpload = (params: UploadSubmitParams) => {
+    if (!pendingUpload || !event) return;
+    const started = startUpload({ communityId, eventId, eventName: event.name }, pendingUpload.assets, params);
     setPendingUpload(null);
-    setUploading(true);
-    try {
-      await api.uploadEventPhoto(
-        communityId, eventId, uri, params.isDiving,
-        params.diveSortOrder ?? undefined,
-        mimeType, ext,
-        {
-          japanese_name: params.jaName || undefined,
-          scientific_name: params.sciName || undefined,
-          creature_id: params.creatureId ?? undefined,
-          camera_make: params.cameraMake || undefined,
-          camera_model: params.cameraModel || undefined,
-          housing_id: params.housingId ?? undefined,
-          lens_id: params.lensId ?? undefined,
-        },
-      );
-      await load();
-    } catch (e) {
-      if (!handleApiError(e)) Alert.alert('アップロードエラー', errorMessage(e));
-    } finally {
-      setUploading(false);
-    }
+    if (!started) Alert.alert('ほかの写真をアップロード中です', '終わってから、もう一度お試しください。');
   };
 
   const isGuest = !communities.some((c) => c.id === communityId);
@@ -436,10 +438,24 @@ export default function EventDetailScreen() {
                 <Text style={styles.sectionBadge}>未同定 {event.unidentified_count}枚</Text>
               ) : null}
               {canEdit ? (
-                <Pressable onPress={pickAndUpload} disabled={uploading} hitSlop={12}>
-                  {uploading
-                    ? <ActivityIndicator size="small" color={colors.primary} />
-                    : <Ionicons name="camera-outline" size={20} color={colors.primary} />}
+                <Pressable
+                  onPress={pickAndUpload}
+                  disabled={uploadProgress !== null}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel={uploadProgress ? `アップロード中 ${uploadProgress.done}/${uploadProgress.total}枚` : '写真を追加'}
+                  style={styles.uploadBtn}
+                >
+                  {uploadProgress ? (
+                    <>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                      {uploadProgress.total > 1 ? (
+                        <Text style={styles.uploadProgress}>{uploadProgress.done}/{uploadProgress.total}</Text>
+                      ) : null}
+                    </>
+                  ) : (
+                    <Ionicons name="camera-outline" size={20} color={colors.primary} />
+                  )}
                 </Pressable>
               ) : null}
             </View>
@@ -551,7 +567,7 @@ export default function EventDetailScreen() {
 
     {pendingUpload ? (
       <UploadModal
-        uri={pendingUpload.uri}
+        uris={pendingUpload.assets.map((a) => a.uri)}
         exifMake={pendingUpload.exifMake}
         exifModel={pendingUpload.exifModel}
         dives={dives}
@@ -565,24 +581,23 @@ export default function EventDetailScreen() {
 
 // ── 型 ─────────────────────────────────────────────────────────────────────
 
-interface UploadSubmitParams {
-  isDiving: boolean;
-  diveSortOrder: number | null;
-  jaName: string;
-  sciName: string;
-  creatureId: number | null;
-  cameraMake: string;
-  cameraModel: string;
-  housingId: number | null;
-  lensId: number | null;
+// 一度に選べる枚数。サーバーのアップロード上限（1分に60枚）に収まるようにする
+const MAX_UPLOAD_PHOTOS = 30;
+
+interface PendingUpload {
+  assets: UploadAsset[];
+  exifMake: string | null;
+  exifModel: string | null;
 }
+
+type UploadSubmitParams = UploadMeta;
 
 // ── UploadModal ────────────────────────────────────────────────────────────
 
 function UploadModal({
-  uri, exifMake, exifModel, dives, onSubmit, onCancel,
+  uris, exifMake, exifModel, dives, onSubmit, onCancel,
 }: {
-  uri: string;
+  uris: string[];
   exifMake: string | null;
   exifModel: string | null;
   dives: Dive[];
@@ -591,6 +606,8 @@ function UploadModal({
 }) {
   const { width: screenWidth } = useWindowDimensions();
   const previewH = Math.round(screenWidth * 0.45);
+  // 複数枚のときは生き物名を入れない（写真ごとに違うため。Web版と同じ）
+  const isSingle = uris.length === 1;
 
   const [isDiving, setIsDiving] = useState(true);
   const [diveSortOrder, setDiveSortOrder] = useState<number | null>(null);
@@ -687,9 +704,9 @@ function UploadModal({
     onSubmit({
       isDiving,
       diveSortOrder: isDiving ? diveSortOrder : null,
-      jaName:       isDiving && !skipMeta ? jaName.trim() : '',
-      sciName:      isDiving && !skipMeta ? sciName.trim() : '',
-      creatureId:   isDiving && !skipMeta ? creatureId : null,
+      jaName:       isDiving && isSingle && !skipMeta ? jaName.trim() : '',
+      sciName:      isDiving && isSingle && !skipMeta ? sciName.trim() : '',
+      creatureId:   isDiving && isSingle && !skipMeta ? creatureId : null,
       cameraMake:   !skipMeta ? (selectedCamera?.brand ?? '') : '',
       cameraModel:  !skipMeta ? (selectedCamera ? (selectedCamera.display_name ?? selectedCamera.model) : '') : '',
       housingId:    !skipMeta ? (selectedHousing?.id ?? null) : null,
@@ -716,16 +733,29 @@ function UploadModal({
           <Pressable onPress={onCancel} hitSlop={12}>
             <Text style={ulStyles.cancel}>キャンセル</Text>
           </Pressable>
-          <Text style={ulStyles.title}>写真の情報を入力</Text>
+          <Text style={ulStyles.title}>{isSingle ? '写真の情報を入力' : `${uris.length}枚の写真`}</Text>
           <Pressable onPress={() => submit(false)} hitSlop={12}>
-            <Text style={ulStyles.done}>登録する</Text>
+            <Text style={ulStyles.done}>{isSingle ? '登録する' : 'まとめて登録'}</Text>
           </Pressable>
         </View>
 
 
 
         <ScrollView contentContainerStyle={ulStyles.body} keyboardShouldPersistTaps="handled">
-          <Image source={{ uri }} style={[ulStyles.preview, { height: previewH }]} resizeMode="cover" />
+          {isSingle ? (
+            <Image source={{ uri: uris[0] }} style={[ulStyles.preview, { height: previewH }]} resizeMode="cover" />
+          ) : (
+            <View style={ulStyles.field}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ulStyles.thumbRow}>
+                {uris.map((u) => (
+                  <Image key={u} source={{ uri: u }} style={ulStyles.thumb} resizeMode="cover" />
+                ))}
+              </ScrollView>
+              <Text style={ulStyles.note}>
+                種別・ダイブ・機材は{uris.length}枚すべてに同じものが入ります。生き物の名前は、登録したあと写真ごとに入れてください。
+              </Text>
+            </View>
+          )}
 
           {/* 写真の種別 */}
           <View style={ulStyles.field}>
@@ -763,8 +793,8 @@ function UploadModal({
             </View>
           ) : null}
 
-          {/* 生き物名（ダイビング写真のみ） */}
-          {isDiving ? (
+          {/* 生き物名（ダイビング写真・1枚のときのみ） */}
+          {isDiving && isSingle ? (
             <>
               <View style={ulStyles.field}>
                 <Text style={ulStyles.label}>和名（任意）</Text>
@@ -919,7 +949,7 @@ function UploadModal({
           ) : null}
 
           <Pressable style={ulStyles.skipBtn} onPress={() => submit(true)}>
-            <Text style={ulStyles.skipTxt}>情報なしで登録</Text>
+            <Text style={ulStyles.skipTxt}>{isSingle ? '情報なしで登録' : '情報なしでまとめて登録'}</Text>
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -1368,6 +1398,8 @@ const styles = StyleSheet.create({
   tabCountActive: { color: colors.primary },
   tabDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#f59e0b' },
   tabContent: { padding: 16, paddingBottom: 32 },
+  uploadBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 24 },
+  uploadProgress: { fontSize: 13, fontWeight: '600', color: colors.primary, fontVariant: ['tabular-nums'] },
   tabActionRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -1419,6 +1451,9 @@ const ulStyles = StyleSheet.create({
 
   body: { padding: 16, paddingBottom: 40, gap: 14 },
   preview: { width: '100%', borderRadius: 12 },
+  thumbRow: { gap: 6 },
+  thumb: { width: 72, height: 72, borderRadius: 8, backgroundColor: colors.border },
+  note: { fontSize: 12, color: colors.textSub, lineHeight: 18 },
 
   field: { gap: 6 },
   label: { fontSize: 13, fontWeight: '600', color: colors.text },

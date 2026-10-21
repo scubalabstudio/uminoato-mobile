@@ -1,7 +1,10 @@
 import { Stack } from 'expo-router';
 
+import { UploadBanner } from '@/components/UploadBanner';
+
 import { colors } from '@/constants/theme';
 import { CommunityProvider } from '@/context/CommunityContext';
+import { UploadProvider } from '@/context/UploadContext';
 import { useNotificationNavigation } from '@/hooks/useNotificationNavigation';
 import { usePendingLinkNavigation } from '@/hooks/usePendingLinkNavigation';
 
@@ -55,7 +58,10 @@ function AppLayoutInner() {
 export default function AppLayout() {
   return (
     <CommunityProvider>
-      <AppLayoutInner />
+      <UploadProvider>
+        <AppLayoutInner />
+        <UploadBanner />
+      </UploadProvider>
     </CommunityProvider>
   );
 }
