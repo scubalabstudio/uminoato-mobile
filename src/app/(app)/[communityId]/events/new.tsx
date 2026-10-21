@@ -99,14 +99,14 @@ export default function NewEventScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {/* イベント名 */}
-        <Field label="イベント名" required>
+        <Field label="イベント名" required hint={`${name.length} / 50`}>
           <TextInput
             style={styles.input}
             value={name}
             onChangeText={setName}
             placeholder="例: 柏島ツアー2026夏"
             placeholderTextColor={colors.textMuted}
-            maxLength={255}
+            maxLength={50}
             returnKeyType="next"
           />
         </Field>

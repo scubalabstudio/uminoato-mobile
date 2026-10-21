@@ -106,8 +106,9 @@ export default function EditEventScreen() {
             onChangeText={setName}
             placeholder="例: 柏島ツアー2026夏"
             placeholderTextColor={colors.textMuted}
-            maxLength={255}
+            maxLength={50}
           />
+          <Text style={styles.hint}>{name.length} / 50</Text>
         </View>
 
         <View style={styles.field}>
@@ -210,6 +211,7 @@ const styles = StyleSheet.create({
   field: { gap: 6 },
   label: { fontSize: 13, fontWeight: '600', color: colors.text },
   required: { color: colors.danger },
+  hint: { fontSize: 12, color: colors.textMuted },
 
   input: {
     borderWidth: 1,
