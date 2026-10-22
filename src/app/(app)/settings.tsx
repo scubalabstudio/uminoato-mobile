@@ -84,6 +84,8 @@ export default function SettingsScreen() {
 
       <OtherServicesSection />
 
+      <GuidesSection />
+
       <AboutSection />
 
       <Button title="ログアウト" variant="secondary" onPress={confirmSignOut} />
@@ -224,6 +226,21 @@ function OtherServicesSection() {
             </Pressable>
           </View>
         ))}
+      </View>
+    </View>
+  );
+}
+
+// ── 使い方ガイド ──────────────────────────────────────────────────────────────
+
+function GuidesSection() {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>使い方ガイド</Text>
+      <View style={styles.card}>
+        <LinkRow label="イベントの使い方" url={`${WEB_URL}/umi-no-ato/events-guide`} />
+        <View style={styles.divider} />
+        <LinkRow label="図鑑の使い方" url={`${WEB_URL}/umi-no-ato/encyclopedia-guide`} />
       </View>
     </View>
   );
