@@ -29,15 +29,17 @@ const memoryCache = new Map<number, CreatureDetail | null>();
 
 export async function searchCreatures(
   q: string,
+  signal?: AbortSignal,
 ): Promise<{ id: number; name: string; scientific_name: string | null }[]> {
   if (q.length < 2) return [];
   const url = `${SUPABASE_URL}/rest/v1/creatures?name=ilike.*${encodeURIComponent(q)}*&limit=10&select=id,name,scientific_name&order=name.asc`;
   const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
   try {
-    const res = await fetch(url, { headers });
+    const res = await fetch(url, { headers, signal });
     if (!res.ok) return [];
     return res.json();
-  } catch {
+  } catch (e) {
+    if ((e as { name?: string }).name === 'AbortError') throw e;
     return [];
   }
 }
@@ -48,15 +50,16 @@ export interface DivingPoint {
   prefecture: string | null;
 }
 
-export async function searchDivingPoints(q: string): Promise<DivingPoint[]> {
+export async function searchDivingPoints(q: string, signal?: AbortSignal): Promise<DivingPoint[]> {
   if (q.length < 2) return [];
   const url = `${SUPABASE_URL}/rest/v1/diving_points?name=ilike.*${encodeURIComponent(q)}*&limit=15&select=id,name,prefecture&order=name.asc`;
   const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
   try {
-    const res = await fetch(url, { headers });
+    const res = await fetch(url, { headers, signal });
     if (!res.ok) return [];
     return res.json();
-  } catch {
+  } catch (e) {
+    if ((e as { name?: string }).name === 'AbortError') throw e;
     return [];
   }
 }
@@ -81,16 +84,19 @@ function dedupById<T extends { id: number }>(items: (T | null)[]): T[] {
   });
 }
 
-export async function searchCameras(q: string): Promise<Camera[]> {
+export async function searchCameras(q: string, signal?: AbortSignal): Promise<Camera[]> {
   if (q.length < 1) return [];
   const enc = encodeURIComponent(q);
   const url = `${SUPABASE_URL}/rest/v1/cameras?or=(model.ilike.*${enc}*,brand.ilike.*${enc}*,display_name.ilike.*${enc}*)&limit=15&select=id,model,brand,display_name&order=model.asc`;
   const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
   try {
-    const res = await fetch(url, { headers });
+    const res = await fetch(url, { headers, signal });
     if (!res.ok) return [];
     return res.json();
-  } catch { return []; }
+  } catch (e) {
+    if ((e as { name?: string }).name === 'AbortError') throw e;
+    return [];
+  }
 }
 
 // カメラ一覧はセッション中は不変なのでメモリキャッシュする

@@ -70,6 +70,7 @@ export default function InviteScreen() {
   const [inviting, setInviting] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchAbort = useRef<AbortController | null>(null);
 
   const publicUrl = `${WEB_URL}/umi-no-ato/${communityId}/events/${eventId}`;
 
@@ -93,16 +94,20 @@ export default function InviteScreen() {
 
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
+    searchAbort.current?.abort();
     if (query.length < 2) { setResults([]); return; }
+    const ctrl = new AbortController();
+    searchAbort.current = ctrl;
     debounce.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const users = await api.searchEventUsers(communityId, eventId, query);
+        const users = await api.searchEventUsers(communityId, eventId, query, ctrl.signal);
         setResults(users);
       } catch (e) {
+        if (ctrl.signal.aborted) return;
         if (!handleApiError(e)) setError(errorMessage(e));
       } finally {
-        setSearching(false);
+        if (!ctrl.signal.aborted) setSearching(false);
       }
     }, 400);
   }, [query, communityId, eventId, handleApiError]);

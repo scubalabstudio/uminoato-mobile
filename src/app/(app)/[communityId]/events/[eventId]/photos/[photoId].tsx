@@ -93,6 +93,7 @@ export default function PhotoDetailScreen() {
   const [pushing, setPushing] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const suggestDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suggestAbort = useRef<AbortController | null>(null);
   const [equipHousing, setEquipHousing] = useState<Housing | null>(null);
   const [equipLens, setEquipLens] = useState<Lens | null>(null);
 
@@ -171,9 +172,11 @@ export default function PhotoDetailScreen() {
     setEditJaName(text);
     setEditCreatureId(null);
     if (suggestDebounce.current) clearTimeout(suggestDebounce.current);
-    suggestDebounce.current = setTimeout(async () => {
-      const results = await searchCreatures(text);
-      setSuggestions(results);
+    suggestAbort.current?.abort();
+    suggestAbort.current = new AbortController();
+    const signal = suggestAbort.current.signal;
+    suggestDebounce.current = setTimeout(() => {
+      searchCreatures(text, signal).then(setSuggestions).catch(() => {});
     }, 400);
   };
 

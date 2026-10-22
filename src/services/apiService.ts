@@ -58,10 +58,17 @@ async function request<T>(
   // 画像のアップロード（FormData）は、境界文字列付きの Content-Type を fetch に付けさせる
   const isForm = options.body instanceof FormData;
 
+  // タイムアウト用コントローラー（15秒）。呼び出し元の signal も委譲する
+  const timeoutCtrl = new AbortController();
+  const timer = setTimeout(() => timeoutCtrl.abort(), 15_000);
+  const callerSignal = options.signal as AbortSignal | undefined;
+  callerSignal?.addEventListener('abort', () => timeoutCtrl.abort(), { once: true });
+
   let res: Response;
   try {
     res = await fetch(`${BACKEND_URL}/api/${path}`, {
       ...options,
+      signal: timeoutCtrl.signal,
       headers: {
         ...(isForm ? {} : { 'Content-Type': 'application/json' }),
         Accept: 'application/json',
@@ -70,8 +77,15 @@ async function request<T>(
       },
     });
   } catch {
+    if (timeoutCtrl.signal.aborted) {
+      // 呼び出し元がキャンセルした場合は専用エラーを投げる（呼び出し元が握りつぶせる）
+      if (callerSignal?.aborted) throw new ApiError(-1, 'キャンセルされました');
+      throw new ApiError(0, 'リクエストがタイムアウトしました。電波の良い場所で再度お試しください。');
+    }
     // 圏外・サーバー停止など。fetch の英語メッセージをそのまま見せない
     throw new ApiError(0, '通信エラーが発生しました。電波の良い場所で再度お試しください。');
+  } finally {
+    clearTimeout(timer);
   }
 
   // ログイン自体の失敗は 422 で返るため、401 はトークン切れ・不正のみ
@@ -93,6 +107,7 @@ async function uploadForm<T>(path: string, form: FormData): Promise<T> {
     xhr.open('POST', `${BACKEND_URL}/api/${path}`);
     xhr.setRequestHeader('Accept', 'application/json');
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.timeout = 60_000;
     xhr.onload = () => {
       if (xhr.status === 401) { reject(new UnauthorizedError()); return; }
       let body: unknown = null;
@@ -101,6 +116,7 @@ async function uploadForm<T>(path: string, form: FormData): Promise<T> {
       else reject(new ApiError(xhr.status, errorMessage(body, xhr.status)));
     };
     xhr.onerror = () => reject(new ApiError(0, '通信エラーが発生しました。電波の良い場所で再度お試しください。'));
+    xhr.ontimeout = () => reject(new ApiError(0, 'アップロードがタイムアウトしました。電波の良い場所で再度お試しください。'));
     xhr.send(form);
   });
 }
@@ -272,9 +288,11 @@ export async function fetchCommunityInvitations(communityId: number): Promise<Co
 export async function searchUsersToInvite(
   communityId: number,
   q: string,
+  signal?: AbortSignal,
 ): Promise<{ user_id: string; name: string }[]> {
   const res = await request<{ users: { user_id: string; name: string }[] }>(
     `communities/${communityId}/user-search?q=${encodeURIComponent(q)}`,
+    { signal },
   );
   return res.users;
 }
@@ -577,9 +595,11 @@ export async function searchEventUsers(
   communityId: number,
   eventId: number,
   q: string,
+  signal?: AbortSignal,
 ): Promise<EventUserSearchResult[]> {
   const res = await request<{ users: EventUserSearchResult[] }>(
     `communities/${communityId}/events/${eventId}/user-search?q=${encodeURIComponent(q)}`,
+    { signal },
   );
   return res.users;
 }

@@ -247,6 +247,7 @@ function PhotoSheet({
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<{ id: number; name: string; scientific_name: string | null }[]>([]);
   const suggDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suggAbort = useRef<AbortController | null>(null);
   // 同定できた名前。入っていれば「図鑑にも載せる」を出す
   const [identifiedName, setIdentifiedName] = useState<string | null>(null);
   const [pushing, setPushing] = useState(false);
@@ -255,8 +256,11 @@ function PhotoSheet({
   const onJaNameChange = (text: string) => {
     setJapaneseName(text);
     if (suggDebounce.current) clearTimeout(suggDebounce.current);
-    suggDebounce.current = setTimeout(async () => {
-      setSuggestions(await searchCreatures(text));
+    suggAbort.current?.abort();
+    suggAbort.current = new AbortController();
+    const signal = suggAbort.current.signal;
+    suggDebounce.current = setTimeout(() => {
+      searchCreatures(text, signal).then(setSuggestions).catch(() => {});
     }, 300);
   };
 

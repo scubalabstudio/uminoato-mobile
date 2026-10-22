@@ -342,6 +342,9 @@ function CreateEntrySheet({
   const creatureDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pointDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const creatureAbort = useRef<AbortController | null>(null);
+  const pointAbort = useRef<AbortController | null>(null);
+  const cameraAbort = useRef<AbortController | null>(null);
 
   useEffect(() => { loadMyEquipment().then(setMyEquipment); }, []);
 
@@ -372,8 +375,11 @@ function CreateEntrySheet({
   const onCameraChange = (text: string) => {
     setCameraQuery(text); setSelectedCamera(null); setActiveField('camera');
     if (cameraDebounce.current) clearTimeout(cameraDebounce.current);
-    cameraDebounce.current = setTimeout(async () => {
-      setCameraSuggestions(await searchCameras(text));
+    cameraAbort.current?.abort();
+    cameraAbort.current = new AbortController();
+    const signal = cameraAbort.current.signal;
+    cameraDebounce.current = setTimeout(() => {
+      searchCameras(text, signal).then(setCameraSuggestions).catch(() => {});
     }, 300);
   };
 
@@ -383,8 +389,11 @@ function CreateEntrySheet({
     setActiveField('creature');
     setShowCreatureSuggestions(true);
     if (creatureDebounce.current) clearTimeout(creatureDebounce.current);
-    creatureDebounce.current = setTimeout(async () => {
-      setCreatureSuggestions(await searchCreatures(text));
+    creatureAbort.current?.abort();
+    creatureAbort.current = new AbortController();
+    const signal = creatureAbort.current.signal;
+    creatureDebounce.current = setTimeout(() => {
+      searchCreatures(text, signal).then(setCreatureSuggestions).catch(() => {});
     }, 400);
   };
 
@@ -403,8 +412,11 @@ function CreateEntrySheet({
     setActiveField('point');
     setShowPointSuggestions(true);
     if (pointDebounce.current) clearTimeout(pointDebounce.current);
-    pointDebounce.current = setTimeout(async () => {
-      setPointSuggestions(await searchDivingPoints(text));
+    pointAbort.current?.abort();
+    pointAbort.current = new AbortController();
+    const signal = pointAbort.current.signal;
+    pointDebounce.current = setTimeout(() => {
+      searchDivingPoints(text, signal).then(setPointSuggestions).catch(() => {});
     }, 400);
   };
 

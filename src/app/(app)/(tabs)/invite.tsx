@@ -269,17 +269,19 @@ function UserSection({
   useEffect(() => {
     const q = query.trim();
     if (q.length < 2) return;
+    const ctrl = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const users = await api.searchUsersToInvite(community.id, q);
+        const users = await api.searchUsersToInvite(community.id, q, ctrl.signal);
         if (latestQuery.current === q) setResults(users);
       } catch (e) {
+        if (ctrl.signal.aborted) return;
         if (latestQuery.current === q) setError(onError(e));
       } finally {
-        if (latestQuery.current === q) setSearching(false);
+        if (!ctrl.signal.aborted && latestQuery.current === q) setSearching(false);
       }
     }, 300);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); ctrl.abort(); };
   }, [query, community.id, onError]);
 
   const invite = async (userId: string, name: string) => {
