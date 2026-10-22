@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 
 import { NetworkErrorView } from '@/components/NetworkErrorView';
+import { ZoomableImage } from '@/components/ZoomableImage';
 import { Button, Field, FormError, errorMessage } from '@/components/ui';
 import { canEditEncyclopedia } from '@/constants/roles';
 import { colors } from '@/constants/theme';
@@ -337,11 +338,10 @@ function PhotoSheet({
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
       >
-        <Image
-          source={{ uri: photo.display_url }}
+        <ZoomableImage
+          uri={photo.display_url}
           style={[styles.photo, { height: Math.round((width - PADDING * 2) * 0.75) }]}
           resizeMode="contain"
-          accessibilityIgnoresInvertColors
         />
         <View style={styles.meta}>
           <Pressable onPress={openEvent} accessibilityRole="link" style={styles.eventLink}>

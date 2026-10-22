@@ -6,7 +6,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -15,6 +14,8 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+
+import { ZoomableImage } from '@/components/ZoomableImage';
 
 import { Button, errorMessage } from '@/components/ui';
 import { canEditEncyclopedia } from '@/constants/roles';
@@ -360,11 +361,10 @@ function PhotoPager({
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         renderItem={({ item }) => (
-          <Image
-            source={{ uri: item.display_url }}
+          <ZoomableImage
+            uri={item.display_url}
             style={{ width, height, backgroundColor: '#000' }}
             resizeMode="contain"
-            accessibilityIgnoresInvertColors
           />
         )}
         onMomentumScrollEnd={(e) => onIndexChange(Math.round(e.nativeEvent.contentOffset.x / width))}

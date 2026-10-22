@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -16,6 +15,8 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+
+import { ZoomableImage } from '@/components/ZoomableImage';
 
 import { errorMessage } from '@/components/ui';
 import { colors } from '@/constants/theme';
@@ -327,8 +328,8 @@ export default function PhotoDetailScreen() {
       <ScrollView contentContainerStyle={styles.container} contentInsetAdjustmentBehavior="automatic">
         <Stack.Screen options={{ title, headerRight }} />
 
-        <Image
-          source={{ uri: displayUrl }}
+        <ZoomableImage
+          uri={displayUrl}
           style={[styles.image, { height: imageHeight }]}
           resizeMode="cover"
         />

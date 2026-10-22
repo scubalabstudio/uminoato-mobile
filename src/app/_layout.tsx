@@ -1,5 +1,6 @@
 import { SplashScreen, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { SessionProvider, useSession } from '@/context/SessionContext';
@@ -8,12 +9,14 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   return (
-    <SessionProvider>
-      <SplashScreenController />
-      <RootNavigator />
-      <OfflineBanner />
-      <StatusBar style="dark" />
-    </SessionProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SessionProvider>
+        <SplashScreenController />
+        <RootNavigator />
+        <OfflineBanner />
+        <StatusBar style="dark" />
+      </SessionProvider>
+    </GestureHandlerRootView>
   );
 }
 
