@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -16,6 +16,7 @@ import { Button, errorMessage } from '@/components/ui';
 import { colors } from '@/constants/theme';
 import { useSession } from '@/context/SessionContext';
 import * as api from '@/services/apiService';
+import { searchDivingPoints, type DivingPoint } from '@/services/supabaseService';
 import type { Dive } from '@/types';
 
 type DiveForm = {
@@ -72,11 +73,40 @@ export default function DiveInfoScreen() {
       ? parsedDives.map((d, i) => toDiveForm(d, i))
       : [],
   );
+  const [suggestions, setSuggestions] = useState<DivingPoint[][]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const debounceRefs = useRef<(ReturnType<typeof setTimeout> | null)[]>([]);
+  const abortRefs = useRef<(AbortController | null)[]>([]);
+
   const updateDive = (idx: number, field: keyof DiveForm, value: string) => {
     setDives(prev => prev.map((d, i) => i === idx ? { ...d, [field]: value } : d));
+  };
+
+  const onDiveSiteChange = (idx: number, text: string) => {
+    updateDive(idx, 'dive_site', text);
+
+    if (debounceRefs.current[idx]) clearTimeout(debounceRefs.current[idx]!);
+    abortRefs.current[idx]?.abort();
+
+    if (!text.trim()) {
+      setSuggestions(prev => { const next = [...prev]; next[idx] = []; return next; });
+      return;
+    }
+
+    abortRefs.current[idx] = new AbortController();
+    const signal = abortRefs.current[idx]!.signal;
+    debounceRefs.current[idx] = setTimeout(() => {
+      searchDivingPoints(text, signal)
+        .then(results => setSuggestions(prev => { const next = [...prev]; next[idx] = results; return next; }))
+        .catch(() => {});
+    }, 300);
+  };
+
+  const selectPoint = (idx: number, point: DivingPoint) => {
+    updateDive(idx, 'dive_site', point.name);
+    setSuggestions(prev => { const next = [...prev]; next[idx] = []; return next; });
   };
 
   const addDive = () => {
@@ -85,10 +115,12 @@ export default function DiveInfoScreen() {
       dive_site: '', point_detail: '',
       water_temp: '', visibility: '', max_depth: '', dive_time: '',
     }]);
+    setSuggestions(prev => [...prev, []]);
   };
 
   const removeDive = (idx: number) => {
     setDives(prev => prev.filter((_, i) => i !== idx).map((d, i) => ({ ...d, sort_order: i + 1 })));
+    setSuggestions(prev => prev.filter((_, i) => i !== idx));
   };
 
   const submit = async () => {
@@ -152,8 +184,27 @@ export default function DiveInfoScreen() {
 
             <View style={styles.field}>
               <Text style={styles.label}>ポイント名</Text>
-              <TextInput style={styles.input} value={dive.dive_site} onChangeText={v => updateDive(idx, 'dive_site', v)} placeholder="例: 大物根" placeholderTextColor={colors.textMuted} />
+              <TextInput
+                style={styles.input}
+                value={dive.dive_site}
+                onChangeText={v => onDiveSiteChange(idx, v)}
+                placeholder="例: 大物根"
+                placeholderTextColor={colors.textMuted}
+              />
+              {(suggestions[idx]?.length ?? 0) > 0 ? (
+                <View style={styles.suggBox}>
+                  <ScrollView style={{ maxHeight: 180 }} keyboardShouldPersistTaps="always" bounces={false} nestedScrollEnabled>
+                    {suggestions[idx].map(point => (
+                      <Pressable key={point.id} style={styles.suggRow} onPress={() => selectPoint(idx, point)}>
+                        <Text style={styles.suggName}>{point.name}</Text>
+                        {point.prefecture ? <Text style={styles.suggSub}>{point.prefecture}</Text> : null}
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : null}
             </View>
+
             <View style={styles.field}>
               <Text style={styles.label}>エリア詳細</Text>
               <TextInput style={styles.input} value={dive.point_detail} onChangeText={v => updateDive(idx, 'point_detail', v)} placeholder="例: 北側" placeholderTextColor={colors.textMuted} />
@@ -212,6 +263,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
   },
   textarea: { height: 80, paddingTop: 10 },
+
+  suggBox: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    overflow: 'hidden',
+  },
+  suggRow: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    gap: 2,
+  },
+  suggName: { fontSize: 14, fontWeight: '600', color: colors.text },
+  suggSub: { fontSize: 12, color: colors.textSub },
 
   diveCard: {
     borderWidth: 1,
