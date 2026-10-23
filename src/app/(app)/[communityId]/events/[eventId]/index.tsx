@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -193,11 +193,26 @@ export default function EventDetailScreen() {
     );
   };
 
-  const pushPhoto = async (photoId: number) => {
+  const pushPhoto = async (photoId: number, body?: Parameters<typeof api.pushEventPhoto>[3]) => {
     if (!event) return;
     setPushingId(photoId);
     try {
-      const updated = await api.pushEventPhoto(communityId, eventId, photoId);
+      const result = await api.pushEventPhoto(communityId, eventId, photoId, body);
+      if ('conflict' in result) {
+        const { entry_id, japanese_name, photo_count } = result.conflict;
+        setPushingId(null);
+        Alert.alert(
+          `「${japanese_name}」が図鑑に登録されています`,
+          `同じ名前の図鑑エントリ（写真${photo_count}枚）が既にあります。そちらに追加しますか？`,
+          [
+            { text: 'キャンセル', style: 'cancel' },
+            { text: '新規登録', onPress: () => pushPhoto(photoId, { force_new: true }) },
+            { text: '追加する', style: 'default', onPress: () => pushPhoto(photoId, { target_entry_id: entry_id }) },
+          ],
+        );
+        return;
+      }
+      const updated = result.photo;
       setEvent(prev => prev ? {
         ...prev,
         photos: prev.photos.map(p => p.id === photoId ? updated : p),
@@ -335,7 +350,7 @@ export default function EventDetailScreen() {
         router.push(`/${communityId}/events/${eventId}/edit?${qs}`);
       }}
     >
-      <Ionicons name="settings-outline" size={20} color={colors.primary} />
+      <Ionicons name="create-outline" size={20} color={colors.primary} />
     </Pressable>
   ) : undefined;
 
@@ -582,7 +597,7 @@ export default function EventDetailScreen() {
 // ── 型 ─────────────────────────────────────────────────────────────────────
 
 // 一度に選べる枚数。サーバーのアップロード上限（1分に60枚）に収まるようにする
-const MAX_UPLOAD_PHOTOS = 30;
+const MAX_UPLOAD_PHOTOS = 15;
 
 interface PendingUpload {
   assets: UploadAsset[];
@@ -968,36 +983,6 @@ function Banner({ icon, text }: { icon: string; text: string }) {
   );
 }
 
-function SectionBlock({
-  icon, title, badge, onAction, actionIcon, actionLoading, children,
-}: {
-  icon: string;
-  title: string;
-  badge?: string;
-  onAction?: () => void;
-  actionIcon?: string;
-  actionLoading?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <View style={styles.sectionBlock}>
-      <View style={styles.sectionHeader}>
-        <Ionicons name={icon as any} size={15} color={colors.primary} />
-        <Text style={styles.sectionTitle}>{title}</Text>
-        {badge ? <Text style={styles.sectionBadge}>{badge}</Text> : null}
-        {onAction ? (
-          <Pressable onPress={onAction} hitSlop={12} disabled={actionLoading} style={styles.sectionAction}>
-            {actionLoading
-              ? <ActivityIndicator size="small" color={colors.primary} />
-              : <Ionicons name={(actionIcon ?? 'add-outline') as any} size={19} color={colors.primary} />
-            }
-          </Pressable>
-        ) : null}
-      </View>
-      <View style={styles.sectionBody}>{children}</View>
-    </View>
-  );
-}
 
 function MemberChips({
   organizer,
@@ -1106,11 +1091,12 @@ function PhotoGrid({
   dives: Dive[];
   isOpen: boolean;
   isOrganizer: boolean;
-  // 写真を端末に保存できるのはイベントの参加者（主催者・参加受諾済み）だけ
   canDownload: boolean;
   pushingId: number | null;
   onPush: (photoId: number) => void;
 }) {
+  const [sortByDive, setSortByDive] = useState(false);
+
   if (photos.length === 0) {
     return (
       <View style={styles.photoEmpty}>
@@ -1119,99 +1105,155 @@ function PhotoGrid({
       </View>
     );
   }
-  return (
-    <View style={styles.photoGrid}>
-      {photos.map((photo) => {
-        const isPushing = pushingId === photo.id;
-        const showStrip = isOrganizer && !isOpen && photo.is_diving_photo;
 
-        // Push先ラベルと状態
-        let stripLabel = '';
-        let stripDone = false;
-        if (photo.pushed_to_encyclopedia) {
-          stripLabel = '図鑑Push済み'; stripDone = true;
-        } else if (photo.pushed_to_community) {
-          stripLabel = '未同定Push済み'; stripDone = true;
-        } else if (photo.is_identified) {
-          stripLabel = '図鑑へPush';
-        } else {
-          stripLabel = '未同定へPush';
-        }
+  const renderPhotoTile = (photo: EventPhoto) => {
+    const isPushing = pushingId === photo.id;
+    const showStrip = isOrganizer && !isOpen && photo.is_diving_photo;
+    let stripLabel = '';
+    let stripDone = false;
+    if (photo.pushed_to_encyclopedia) { stripLabel = '図鑑Push済み'; stripDone = true; }
+    else if (photo.pushed_to_community) { stripLabel = '未同定Push済み'; stripDone = true; }
+    else if (photo.is_identified) { stripLabel = '図鑑へPush'; }
+    else { stripLabel = '未同定へPush'; }
 
-        return (
-          <View key={photo.id} style={{ width: tileSize }}>
-            <Pressable
-              onPress={() => {
-                const diveOpts = dives.map(d => ({ o: d.sort_order, s: d.dive_site ?? null }));
-                const canpush = (!isOpen && isOrganizer) ? 1 : 0;
-                const qs = [
-                  `url=${encodeURIComponent(photo.display_url)}`,
-                  `name=${encodeURIComponent(photo.japanese_name ?? '')}`,
-                  `sci=${encodeURIComponent(photo.scientific_name ?? '')}`,
-                  `uploader=${encodeURIComponent(photo.uploader_name ?? '')}`,
-                  `cid=${photo.creature_id ?? ''}`,
-                  `dive=${photo.is_diving_photo ? 1 : 0}`,
-                  `edit=${canEdit ? 1 : 0}`,
-                  `mine=${photo.is_mine ? 1 : 0}`,
-                  `dso=${photo.dive_sort_order ?? ''}`,
-                  `dives=${encodeURIComponent(JSON.stringify(diveOpts))}`,
-                  `ename=${encodeURIComponent(eventName)}`,
-                  `canpush=${canpush}`,
-                  `dl=${canDownload ? 1 : 0}`,
-                  `uid=${photo.uploader_id ?? ''}`,
-                  `pushed_enc=${photo.pushed_to_encyclopedia ? 1 : 0}`,
-                  `pushed_com=${photo.pushed_to_community ? 1 : 0}`,
-                  `species_enc=${photo.species_in_encyclopedia ? 1 : 0}`,
-                  `cam_make=${encodeURIComponent(photo.camera_make ?? '')}`,
-                  `cam_model=${encodeURIComponent(photo.camera_model ?? '')}`,
-                  `housing_id=${photo.housing_id ?? ''}`,
-                  `lens_id=${photo.lens_id ?? ''}`,
-                ].join('&');
-                router.push(`/${communityId}/events/${eventId}/photos/${photo.id}?${qs}`);
-              }}
-              style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}
-            >
-              <Image
-                source={{ uri: photo.thumbnail_url }}
-                style={{ width: tileSize, height: tileSize, borderRadius: 8 }}
-                resizeMode="cover"
-              />
-            </Pressable>
+    return (
+      <View key={photo.id} style={{ width: tileSize }}>
+        <Pressable
+          onPress={() => {
+            const diveOpts = dives.map(d => ({ o: d.sort_order, s: d.dive_site ?? null }));
+            const canpush = (!isOpen && isOrganizer) ? 1 : 0;
+            const qs = [
+              `url=${encodeURIComponent(photo.display_url)}`,
+              `name=${encodeURIComponent(photo.japanese_name ?? '')}`,
+              `sci=${encodeURIComponent(photo.scientific_name ?? '')}`,
+              `uploader=${encodeURIComponent(photo.uploader_name ?? '')}`,
+              `cid=${photo.creature_id ?? ''}`,
+              `dive=${photo.is_diving_photo ? 1 : 0}`,
+              `edit=${canEdit ? 1 : 0}`,
+              `mine=${photo.is_mine ? 1 : 0}`,
+              `dso=${photo.dive_sort_order ?? ''}`,
+              `dives=${encodeURIComponent(JSON.stringify(diveOpts))}`,
+              `ename=${encodeURIComponent(eventName)}`,
+              `canpush=${canpush}`,
+              `dl=${canDownload ? 1 : 0}`,
+              `uid=${photo.uploader_id ?? ''}`,
+              `pushed_enc=${photo.pushed_to_encyclopedia ? 1 : 0}`,
+              `pushed_com=${photo.pushed_to_community ? 1 : 0}`,
+              `species_enc=${photo.species_in_encyclopedia ? 1 : 0}`,
+              `cam_make=${encodeURIComponent(photo.camera_make ?? '')}`,
+              `cam_model=${encodeURIComponent(photo.camera_model ?? '')}`,
+              `housing_id=${photo.housing_id ?? ''}`,
+              `lens_id=${photo.lens_id ?? ''}`,
+            ].join('&');
+            router.push(`/${communityId}/events/${eventId}/photos/${photo.id}?${qs}`);
+          }}
+          style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}
+        >
+          <Image
+            source={{ uri: photo.thumbnail_url }}
+            style={{ width: tileSize, height: tileSize, borderRadius: 8 }}
+            resizeMode="cover"
+          />
+        </Pressable>
 
-            {photo.is_diving_photo ? (
-              <View style={styles.photoLabel}>
-                <Text style={styles.photoName} numberOfLines={1}>
-                  {photo.japanese_name ?? <Text style={styles.photoNameMissing}>和名未入力</Text>}
-                </Text>
-                {photo.scientific_name ? (
-                  <Text style={styles.photoSci} numberOfLines={1}>{photo.scientific_name}</Text>
-                ) : null}
-              </View>
-            ) : null}
-
-            {showStrip ? (
-              <Pressable
-                onPress={() => !stripDone && !isPushing && onPush(photo.id)}
-                disabled={stripDone || isPushing}
-                style={[styles.pushStrip, stripDone && styles.pushStripDone]}
-              >
-                {isPushing ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <Ionicons
-                    name={stripDone ? 'checkmark-circle' : 'arrow-up-circle-outline'}
-                    size={11}
-                    color={stripDone ? colors.textMuted : colors.primary}
-                  />
-                )}
-                <Text style={[styles.pushStripText, stripDone && styles.pushStripTextDone]} numberOfLines={1}>
-                  {isPushing ? 'Push中...' : stripLabel}
-                </Text>
-              </Pressable>
+        {photo.is_diving_photo ? (
+          <View style={styles.photoLabel}>
+            <Text style={styles.photoName} numberOfLines={1}>
+              {photo.japanese_name ?? <Text style={styles.photoNameMissing}>和名未入力</Text>}
+            </Text>
+            {photo.scientific_name ? (
+              <Text style={styles.photoSci} numberOfLines={1}>{photo.scientific_name}</Text>
             ) : null}
           </View>
-        );
-      })}
+        ) : null}
+
+        {showStrip ? (
+          <Pressable
+            onPress={() => !stripDone && !isPushing && onPush(photo.id)}
+            disabled={stripDone || isPushing}
+            style={[styles.pushStrip, stripDone && styles.pushStripDone]}
+          >
+            {isPushing ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Ionicons
+                name={stripDone ? 'checkmark-circle' : 'arrow-up-circle-outline'}
+                size={11}
+                color={stripDone ? colors.textMuted : colors.primary}
+              />
+            )}
+            <Text style={[styles.pushStripText, stripDone && styles.pushStripTextDone]} numberOfLines={1}>
+              {isPushing ? 'Push中...' : stripLabel}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  };
+
+  // ダイブ順: ダイブごとにグループ化して表示
+  if (sortByDive && dives.length > 0) {
+    const grouped = new Map<number | null, EventPhoto[]>();
+    grouped.set(null, []);
+    for (const d of dives) grouped.set(d.sort_order, []);
+    for (const p of photos) {
+      const key = p.dive_sort_order ?? null;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)!.push(p);
+    }
+
+    return (
+      <View>
+        {/* ソートトグル */}
+        <View style={styles.sortRow}>
+          <Text style={styles.sortLabel}>並び順:</Text>
+          <Pressable style={[styles.sortChip, styles.sortChipOff]} onPress={() => setSortByDive(false)}>
+            <Text style={styles.sortChipTextOff}>アップロード順</Text>
+          </Pressable>
+          <Pressable style={[styles.sortChip, styles.sortChipOn]}>
+            <Text style={styles.sortChipTextOn}>ダイブ順</Text>
+          </Pressable>
+        </View>
+
+        {dives.map(d => {
+          const group = grouped.get(d.sort_order) ?? [];
+          if (group.length === 0) return null;
+          const label = d.dive_site ? `${d.sort_order}本目 · ${d.dive_site}` : `${d.sort_order}本目`;
+          return (
+            <View key={d.sort_order}>
+              <Text style={styles.diveSectionHead}>{label}</Text>
+              <View style={styles.photoGrid}>{group.map(renderPhotoTile)}</View>
+            </View>
+          );
+        })}
+
+        {(grouped.get(null) ?? []).length > 0 ? (
+          <View>
+            <Text style={styles.diveSectionHead}>ダイブ未登録</Text>
+            <View style={styles.photoGrid}>{(grouped.get(null) ?? []).map(renderPhotoTile)}</View>
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
+  // アップロード順（デフォルト）
+  return (
+    <View>
+      {dives.length > 0 ? (
+        <View style={styles.sortRow}>
+          <Text style={styles.sortLabel}>並び順:</Text>
+          <Pressable style={[styles.sortChip, styles.sortChipOn]}>
+            <Text style={styles.sortChipTextOn}>アップロード順</Text>
+          </Pressable>
+          <Pressable style={[styles.sortChip, styles.sortChipOff]} onPress={() => setSortByDive(true)}>
+            <Text style={styles.sortChipTextOff}>ダイブ順</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      <View style={styles.photoGrid}>
+        {photos.map(renderPhotoTile)}
+      </View>
     </View>
   );
 }
@@ -1412,6 +1454,14 @@ const styles = StyleSheet.create({
   manageHint: { fontSize: 12, color: colors.textSub, textAlign: 'center' },
   deleteButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 },
   deleteText: { fontSize: 14, color: colors.danger, fontWeight: '500' },
+  sortRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 10 },
+  sortLabel: { fontSize: 12, color: colors.textSub },
+  sortChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  sortChipOn: { backgroundColor: colors.primary },
+  sortChipOff: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
+  sortChipTextOn: { fontSize: 12, color: colors.white, fontWeight: '600' },
+  sortChipTextOff: { fontSize: 12, color: colors.textSub },
+  diveSectionHead: { fontSize: 13, fontWeight: '700', color: colors.primary, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6 },
 });
 
 // ── UploadModal スタイル ────────────────────────────────────────────────────
