@@ -462,14 +462,13 @@ function CreateEntrySheet({
     const jName = japaneseName.trim();
     const sName = scientificName.trim();
     if (!jName) { setError('和名を入力してください'); return; }
-    if (!sName) { setError('学名を入力してください'); return; }
     if (!imageAsset) { setError('写真を選んでください'); return; }
     setSaving(true);
     setError(null);
     try {
       const entry = await api.createEncyclopediaEntry(communityId, {
         japaneseName: jName,
-        scientificName: sName,
+        scientificName: sName || undefined,
         creatureId,
         pointName: pointName.trim() || undefined,
         pointId,
@@ -549,7 +548,7 @@ function CreateEntrySheet({
           </View>
 
           <View style={styles.createField}>
-            <Text style={styles.createLabel}>学名</Text>
+            <Text style={styles.createLabel}>学名（任意）</Text>
             <TextInput
               style={styles.createInput}
               value={scientificName}
