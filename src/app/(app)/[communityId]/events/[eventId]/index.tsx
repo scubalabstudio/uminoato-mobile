@@ -63,6 +63,7 @@ export default function EventDetailScreen() {
   const [removingId, setRemovingId] = useState<number | null>(null);
   const [pushingId, setPushingId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'photos' | 'dive' | 'members' | 'report'>('photos');
+  const [photoSortByDive, setPhotoSortByDive] = useState(false);
   const moderation = useModeration();
   const { width: screenWidth } = useWindowDimensions();
 
@@ -310,6 +311,8 @@ export default function EventDetailScreen() {
   const accepted = event.members.filter((m) => m.status === 'accepted');
   const invitedMembers = event.members.filter((m) => m.status === 'invited');
   const dives = event.dive_info?.dives ?? [];
+  // ダイブが登録されていて、写真があるときだけ並び順を切り替えられる
+  const showPhotoSort = dives.length > 0 && (event.photos ?? []).length > 0;
   const tileSize = (screenWidth - 16 * 2 - 8) / 2;
   const isOpen = event.status === 'open';
   const isOrganizer = event.is_organizer;
@@ -447,8 +450,11 @@ export default function EventDetailScreen() {
       {/* ── タブコンテンツ ── */}
       {activeTab === 'photos' ? (
         <View style={styles.tabContent}>
-          {canEdit || event.unidentified_count > 0 ? (
+          {canEdit || event.unidentified_count > 0 || showPhotoSort ? (
             <View style={styles.tabActionRow}>
+              {showPhotoSort ? (
+                <PhotoSortToggle sortByDive={photoSortByDive} onChange={setPhotoSortByDive} />
+              ) : null}
               {event.unidentified_count > 0 ? (
                 <Text style={styles.sectionBadge}>未同定 {event.unidentified_count}枚</Text>
               ) : null}
@@ -483,6 +489,7 @@ export default function EventDetailScreen() {
             eventName={event.name}
             canEdit={canEdit}
             dives={dives}
+            sortByDive={photoSortByDive}
             isOpen={isOpen}
             isOrganizer={isOrganizer}
             canDownload={event.member_status === 'organizer' || event.member_status === 'accepted'}
@@ -1079,8 +1086,35 @@ function DiveRow({ dive }: { dive: Dive }) {
   );
 }
 
+// 写真の並び順の切り替え（アップロード順・ダイブ順）。写真タブの上の行に置く
+function PhotoSortToggle({ sortByDive, onChange }: { sortByDive: boolean; onChange: (byDive: boolean) => void }) {
+  const options = [
+    { byDive: false, label: 'アップロード順' },
+    { byDive: true, label: 'ダイブ順' },
+  ];
+  return (
+    <View style={styles.sortToggle}>
+      {options.map(({ byDive, label }) => {
+        const selected = sortByDive === byDive;
+        return (
+          <Pressable
+            key={label}
+            onPress={() => onChange(byDive)}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+            hitSlop={6}
+            style={[styles.sortChip, selected ? styles.sortChipOn : styles.sortChipOff]}
+          >
+            <Text style={selected ? styles.sortChipTextOn : styles.sortChipTextOff}>{label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 function PhotoGrid({
-  photos, tileSize, communityId, eventId, eventName, canEdit, dives, isOpen, isOrganizer, canDownload, pushingId, onPush,
+  photos, tileSize, communityId, eventId, eventName, canEdit, dives, sortByDive, isOpen, isOrganizer, canDownload, pushingId, onPush,
 }: {
   photos: EventPhoto[];
   tileSize: number;
@@ -1089,14 +1123,13 @@ function PhotoGrid({
   eventName: string;
   canEdit: boolean;
   dives: Dive[];
+  sortByDive: boolean;
   isOpen: boolean;
   isOrganizer: boolean;
   canDownload: boolean;
   pushingId: number | null;
   onPush: (photoId: number) => void;
 }) {
-  const [sortByDive, setSortByDive] = useState(false);
-
   if (photos.length === 0) {
     return (
       <View style={styles.photoEmpty}>
@@ -1204,17 +1237,6 @@ function PhotoGrid({
 
     return (
       <View>
-        {/* ソートトグル */}
-        <View style={styles.sortRow}>
-          <Text style={styles.sortLabel}>並び順:</Text>
-          <Pressable style={[styles.sortChip, styles.sortChipOff]} onPress={() => setSortByDive(false)}>
-            <Text style={styles.sortChipTextOff}>アップロード順</Text>
-          </Pressable>
-          <Pressable style={[styles.sortChip, styles.sortChipOn]}>
-            <Text style={styles.sortChipTextOn}>ダイブ順</Text>
-          </Pressable>
-        </View>
-
         {dives.map(d => {
           const group = grouped.get(d.sort_order) ?? [];
           if (group.length === 0) return null;
@@ -1240,17 +1262,6 @@ function PhotoGrid({
   // アップロード順（デフォルト）
   return (
     <View>
-      {dives.length > 0 ? (
-        <View style={styles.sortRow}>
-          <Text style={styles.sortLabel}>並び順:</Text>
-          <Pressable style={[styles.sortChip, styles.sortChipOn]}>
-            <Text style={styles.sortChipTextOn}>アップロード順</Text>
-          </Pressable>
-          <Pressable style={[styles.sortChip, styles.sortChipOff]} onPress={() => setSortByDive(true)}>
-            <Text style={styles.sortChipTextOff}>ダイブ順</Text>
-          </Pressable>
-        </View>
-      ) : null}
       <View style={styles.photoGrid}>
         {photos.map(renderPhotoTile)}
       </View>
@@ -1454,8 +1465,8 @@ const styles = StyleSheet.create({
   manageHint: { fontSize: 12, color: colors.textSub, textAlign: 'center' },
   deleteButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 },
   deleteText: { fontSize: 14, color: colors.danger, fontWeight: '500' },
-  sortRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 10 },
-  sortLabel: { fontSize: 12, color: colors.textSub },
+  // 左寄せにして、未同定ラベル・カメラボタンを右に押し出す
+  sortToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: 'auto' },
   sortChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   sortChipOn: { backgroundColor: colors.primary },
   sortChipOff: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
