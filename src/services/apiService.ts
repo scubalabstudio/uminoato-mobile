@@ -517,16 +517,25 @@ export async function deleteEventPhoto(
   );
 }
 
+export type PushConflict = {
+  entry_id: number;
+  japanese_name: string;
+  photo_count: number;
+};
+
 export async function pushEventPhoto(
   communityId: number,
   eventId: number,
   photoId: number,
-): Promise<EventPhoto> {
-  const res = await request<{ photo: EventPhoto }>(
+  body?: { target_entry_id?: number; force_new?: boolean },
+): Promise<{ photo: EventPhoto } | { conflict: PushConflict }> {
+  return request<{ photo: EventPhoto } | { conflict: PushConflict }>(
     `communities/${communityId}/events/${eventId}/photos/${photoId}/push`,
-    { method: 'POST' },
+    {
+      method: 'POST',
+      body: body ? JSON.stringify(body) : undefined,
+    },
   );
-  return res.photo;
 }
 
 // イベント写真を端末の一時フォルダにJPEGで落とし、そのファイルのURIを返す。
@@ -662,7 +671,7 @@ export async function createEncyclopediaEntry(
   communityId: number,
   params: {
     japaneseName: string;
-    scientificName: string;
+    scientificName?: string;
     creatureId?: number | null;
     pointName?: string;
     pointId?: number | null;
@@ -679,7 +688,7 @@ export async function createEncyclopediaEntry(
   const form = new FormData();
   form.append('image', { uri: fileUri, name: `photo.${ext}`, type: mimeType } as unknown as Blob);
   form.append('japanese_name', japaneseName);
-  form.append('scientific_name', scientificName);
+  if (scientificName) form.append('scientific_name', scientificName);
   if (creatureId != null) form.append('creature_id', String(creatureId));
   if (pointName) form.append('point_name', pointName);
   if (pointId != null) form.append('point_id', String(pointId));
@@ -736,6 +745,18 @@ export async function deleteEncyclopediaPhoto(
 }
 
 // 管理者・図鑑編集者のみ。指定したタグの集合に置き換える（空配列でタグなし）
+export async function updateEncyclopediaEntry(
+  communityId: number,
+  entryId: number,
+  data: { japanese_name: string; scientific_name: string | null },
+): Promise<EncyclopediaEntryDetail> {
+  const res = await request<{ entry: EncyclopediaEntryDetail }>(
+    `communities/${communityId}/encyclopedia/${entryId}`,
+    { method: 'PATCH', body: JSON.stringify(data) },
+  );
+  return res.entry;
+}
+
 export async function updateEncyclopediaTags(
   communityId: number,
   entryId: number,
