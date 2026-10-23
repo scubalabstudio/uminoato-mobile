@@ -3,6 +3,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Modal,
@@ -255,6 +256,7 @@ function PhotoSheet({
 
   const onJaNameChange = (text: string) => {
     setJapaneseName(text);
+    setScientificName('');
     if (suggDebounce.current) clearTimeout(suggDebounce.current);
     suggAbort.current?.abort();
     suggAbort.current = new AbortController();
@@ -305,21 +307,36 @@ function PhotoSheet({
   };
 
   // イベントの写真を図鑑へ送るAPIを使う。未同定一覧に載る写真はイベントが終了済みなので、そのまま送れる
-  const pushToEncyclopedia = async () => {
+  const doPush = async (body?: Parameters<typeof api.pushEventPhoto>[3]) => {
     setPushing(true);
     setError(null);
     try {
-      await api.pushEventPhoto(communityId, photo.event_id, photo.id);
+      const result = await api.pushEventPhoto(communityId, photo.event_id, photo.id, body);
+      if ('conflict' in result) {
+        const { entry_id, japanese_name, photo_count } = result.conflict;
+        setPushing(false);
+        Alert.alert(
+          `「${japanese_name}」が図鑑に登録されています`,
+          `同じ名前の図鑑エントリ（写真${photo_count}枚）が既にあります。そちらに追加しますか？`,
+          [
+            { text: 'キャンセル', style: 'cancel' },
+            { text: '新規登録', onPress: () => doPush({ force_new: true }) },
+            { text: '追加する', style: 'default', onPress: () => doPush({ target_entry_id: entry_id }) },
+          ],
+        );
+        return;
+      }
       markEncyclopediaStale();
       setPushed(true);
     } catch (e) {
       if (handleApiError(e)) return;
-      // 同じ種の写真がすでに5枚ある場合などは、サーバーのメッセージをそのまま出す
       setError(errorMessage(e));
     } finally {
       setPushing(false);
     }
   };
+
+  const pushToEncyclopedia = () => doPush();
 
   return (
     <View style={styles.sheet}>
@@ -415,7 +432,7 @@ function PhotoSheet({
               onSubmitEditing={identify}
             />
             <FormError message={error} />
-            <Button title="同定する" onPress={identify} loading={saving} />
+            <Button title="同定する" onPress={identify} loading={saving} disabled={!japaneseName.trim()} />
             <Text style={styles.hint}>同定したあと、続けて図鑑に載せるかを選べます。</Text>
           </View>
         ) : null}

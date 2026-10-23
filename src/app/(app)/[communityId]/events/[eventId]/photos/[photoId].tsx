@@ -210,10 +210,25 @@ export default function PhotoDetailScreen() {
     }
   };
 
-  const doPush = async () => {
+  const doPush = async (body?: Parameters<typeof api.pushEventPhoto>[3]) => {
     setPushing(true);
     try {
-      const updated = await api.pushEventPhoto(communityId, eventId, photoId);
+      const result = await api.pushEventPhoto(communityId, eventId, photoId, body);
+      if ('conflict' in result) {
+        const { entry_id, japanese_name, photo_count } = result.conflict;
+        setPushing(false);
+        Alert.alert(
+          `「${japanese_name}」が図鑑に登録されています`,
+          `同じ名前の図鑑エントリ（写真${photo_count}枚）が既にあります。そちらに追加しますか？`,
+          [
+            { text: 'キャンセル', style: 'cancel' },
+            { text: '新規登録', onPress: () => doPush({ force_new: true }) },
+            { text: '追加する', style: 'default', onPress: () => doPush({ target_entry_id: entry_id }) },
+          ],
+        );
+        return;
+      }
+      const updated = result.photo;
       setPushedEnc(updated.pushed_to_encyclopedia);
       setPushedCom(updated.pushed_to_community);
       setPhoto(updated);
