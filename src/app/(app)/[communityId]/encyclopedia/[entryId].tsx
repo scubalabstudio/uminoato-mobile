@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,7 +17,7 @@ import {
 
 import { ZoomableImage } from '@/components/ZoomableImage';
 
-import { Button, errorMessage } from '@/components/ui';
+import { Button, Field, FormError, errorMessage } from '@/components/ui';
 import { canEditEncyclopedia } from '@/constants/roles';
 import { colors } from '@/constants/theme';
 import { useCommunity } from '@/context/CommunityContext';
@@ -302,10 +302,16 @@ export default function EncyclopediaEntryScreen() {
       ) : null}
 
       <View style={styles.body}>
-        <View>
-          <Text style={styles.name}>{entry.japanese_name}</Text>
-          <Text style={styles.scientific}>{entry.scientific_name}</Text>
-        </View>
+        <NameSection
+          communityId={communityId}
+          entry={entry}
+          canEdit={canEdit}
+          onSaved={(e) => {
+            setEntry(e);
+            markEncyclopediaStale();
+          }}
+          onError={onEditError}
+        />
 
         <TagSection
           communityId={communityId}
@@ -376,6 +382,115 @@ function PhotoPager({
             <View key={p.id} style={[styles.dot, i === index && styles.dotActive]} />
           ))}
         </View>
+      ) : null}
+    </View>
+  );
+}
+
+function NameSection({
+  communityId,
+  entry,
+  canEdit,
+  onSaved,
+  onError,
+}: {
+  communityId: number;
+  entry: EncyclopediaEntryDetail;
+  canEdit: boolean;
+  onSaved: (entry: EncyclopediaEntryDetail) => void;
+  onError: (err: unknown) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [jaName, setJaName] = useState('');
+  const [sciName, setSciName] = useState('');
+  const [suggestions, setSuggestions] = useState<{ id: number; name: string; scientific_name: string | null }[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const startEdit = () => {
+    setJaName(entry.japanese_name);
+    setSciName(entry.scientific_name ?? '');
+    setSuggestions([]);
+    setError(null);
+    setEditing(true);
+  };
+
+  const onJaNameChange = (text: string) => {
+    setJaName(text);
+    setSciName('');
+    setSuggestions([]);
+    if (debounce.current) clearTimeout(debounce.current);
+    abortRef.current?.abort();
+    if (!text.trim()) return;
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
+    debounce.current = setTimeout(() => {
+      searchCreatures(text, signal).then(setSuggestions).catch(() => {});
+    }, 300);
+  };
+
+  const selectCreature = (item: { id: number; name: string; scientific_name: string | null }) => {
+    setJaName(item.name);
+    setSciName(item.scientific_name ?? '');
+    setSuggestions([]);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await api.updateEncyclopediaEntry(communityId, entry.id, {
+        japanese_name: jaName.trim(),
+        scientific_name: sciName.trim() || null,
+      });
+      onSaved(updated);
+      setEditing(false);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <View style={styles.nameEditForm}>
+        <Field label="和名" value={jaName} onChangeText={onJaNameChange} placeholder="例: クマノミ" maxLength={255} returnKeyType="next" />
+        {suggestions.length > 0 ? (
+          <View style={styles.inlineSugg}>
+            <ScrollView style={{ maxHeight: 200 }} keyboardShouldPersistTaps="always" bounces={false} nestedScrollEnabled>
+              {suggestions.map((item) => (
+                <Pressable key={String(item.id)} style={styles.suggRow} onPress={() => selectCreature(item)}>
+                  <Text style={styles.suggName}>{item.name}</Text>
+                  {item.scientific_name ? <Text style={styles.suggSci}>{item.scientific_name}</Text> : null}
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
+        <Field label="学名（任意）" value={sciName} onChangeText={setSciName} placeholder="例: Amphiprion clarkii" autoCapitalize="none" autoCorrect={false} maxLength={255} returnKeyType="done" onSubmitEditing={save} />
+        <FormError message={error} />
+        <View style={styles.tagActions}>
+          <View style={styles.flex}><Button title="キャンセル" variant="secondary" onPress={() => setEditing(false)} disabled={saving} /></View>
+          <View style={styles.flex}><Button title="保存する" onPress={save} loading={saving} disabled={!jaName.trim()} /></View>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.nameRow}>
+      <View style={styles.flex}>
+        <Text style={styles.name}>{entry.japanese_name}</Text>
+        {entry.scientific_name ? <Text style={styles.scientific}>{entry.scientific_name}</Text> : null}
+      </View>
+      {canEdit ? (
+        <Pressable onPress={startEdit} accessibilityRole="button" hitSlop={8} style={styles.editLink}>
+          <Ionicons name="pencil" size={13} color={colors.primary} />
+          <Text style={styles.editLinkText}>編集</Text>
+        </Pressable>
       ) : null}
     </View>
   );
@@ -568,8 +683,10 @@ const styles = StyleSheet.create({
   metaText: { fontSize: 13, color: colors.textSub, flexShrink: 1 },
   deleteButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   body: { padding: 16, gap: 24 },
-  name: { fontSize: 24, fontWeight: '700', color: colors.text, textAlign: 'center' },
-  scientific: { fontSize: 15, fontStyle: 'italic', color: colors.textSub, marginTop: 2, textAlign: 'center' },
+  nameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  nameEditForm: { gap: 12 },
+  name: { fontSize: 24, fontWeight: '700', color: colors.text },
+  scientific: { fontSize: 15, fontStyle: 'italic', color: colors.textSub, marginTop: 2 },
   section: { gap: 10 },
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
@@ -606,4 +723,8 @@ const styles = StyleSheet.create({
   factLabel: { fontSize: 12, color: colors.textSub },
   factValue: { fontSize: 14, fontWeight: '600', color: colors.text },
   hint: { fontSize: 12, color: colors.textSub, lineHeight: 18 },
+  inlineSugg: { borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, overflow: 'hidden' },
+  suggRow: { paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, gap: 2 },
+  suggName: { fontSize: 14, fontWeight: '600', color: colors.text },
+  suggSci: { fontSize: 12, color: colors.textSub, fontStyle: 'italic' },
 });
